@@ -1,0 +1,56 @@
+# --- Reference repos: read-only, never committed (README.md is the exception) ---
+/reference/*
+!/reference/README.md
+
+# --- Downloaded prebuilt binaries ---
+/third_party/opencv-prebuilt/
+
+# --- Local config overrides & secrets ---
+/config/*.local.json
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+*.p12
+*.mobileprovision
+*.pem
+*.key
+google-services.json
+GoogleService-Info.plist
+sentry.properties
+local.properties
+
+# --- Build outputs ---
+build/
+.build/
+DerivedData/
+.gradle/
+.cxx/
+.externalNativeBuild/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+captures/
+
+# --- Python ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+
+# --- Editors / OS ---
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# --- Detector / segmentation models (fetched by scripts/fetch_models.sh, never committed; ADR 0017, issue #8) ---
+/android/capturekit/src/main/assets/*.tflite
+/android/capturekit/src/main/assets/*.bin
+.kotlin/

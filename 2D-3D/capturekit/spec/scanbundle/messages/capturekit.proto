@@ -1,0 +1,214 @@
+// Scan Bundle MCAP channel messages. Package major version = bundle schema major (SPEC.md).
+// Field numbers are frozen once released; only add fields.
+syntax = "proto3";
+package capturekit.v1;
+
+enum TrackingState {
+  TRACKING_STATE_UNSPECIFIED = 0;
+  TRACKING_STATE_NORMAL = 1;
+  TRACKING_STATE_LIMITED = 2;
+  TRACKING_STATE_NOT_AVAILABLE = 3;
+}
+
+enum TrackingReason {
+  TRACKING_REASON_NONE = 0;
+  TRACKING_REASON_INITIALIZING = 1;
+  TRACKING_REASON_EXCESSIVE_MOTION = 2;
+  TRACKING_REASON_INSUFFICIENT_FEATURES = 3;
+  TRACKING_REASON_INSUFFICIENT_LIGHT = 4;
+  TRACKING_REASON_RELOCALIZING = 5;
+  TRACKING_REASON_BAD_STATE = 6;
+  TRACKING_REASON_CAMERA_UNAVAILABLE = 7;
+  TRACKING_REASON_OTHER = 8;
+}
+
+// /pose : T_world_from_camera (conventions.md). Quaternion stored as separate w,x,y,z fields.
+message Pose {
+  int64 t_ns = 1;
+  double tx = 2;
+  double ty = 3;
+  double tz = 4;
+  double qw = 5;
+  double qx = 6;
+  double qy = 7;
+  double qz = 8;
+  TrackingState tracking_state = 9;
+  TrackingReason tracking_reason = 10;
+}
+
+// /imu/gyro (rad/s) and /imu/accel (m/s^2, specific force), IMU frame (camera.json q_camera_from_imu).
+message ImuSample {
+  int64 t_ns = 1;
+  double x = 2;
+  double y = 3;
+  double z = 4;
+}
+
+enum CameraModel {
+  CAMERA_MODEL_PINHOLE = 0;
+  CAMERA_MODEL_OPENCV = 1;
+}
+
+// /intrinsics : emitted at start and whenever intrinsics change. Pixels of the stored image.
+message Intrinsics {
+  int64 t_ns = 1;
+  uint32 width = 2;
+  uint32 height = 3;
+  double fx = 4;
+  double fy = 5;
+  double cx = 6;
+  double cy = 7;
+  CameraModel model = 8;
+  repeated double distortion = 9;
+}
+
+// /frame_index : one per candidate frame; keyframe=true when a JPEG was kept.
+message FrameIndex {
+  int64 t_ns = 1;
+  uint32 frame_id = 2;
+  string file = 3;           // bundle-relative path, empty when not kept
+  bool keyframe = 4;
+  int64 exposure_ns = 5;
+  double sharpness = 6;      // variance of Laplacian on ~320 px luma
+  double sharpness_norm = 7; // sharpness / running session baseline
+  double blur_risk_px = 8;   // gyro-predicted motion blur in pixels
+  double clip_low = 9;       // fraction of pixels <= 5
+  double clip_high = 10;     // fraction of pixels >= 250
+  uint32 corners = 11;
+  double corner_spread = 12; // fraction of 4x4 grid cells with corners
+  double quality = 13;       // 0..1
+  repeated string reasons = 14;
+  TrackingState tracking_state = 15;
+}
+
+message KeyValue {
+  string key = 1;
+  string value = 2;
+}
+
+// /events : state transitions, drops, policy changes, keyframe decisions, guidance.
+message Event {
+  int64 t_ns = 1;
+  string source = 2; // session | quality | keyframe | governor | guide | platform | replay
+  string code = 3;   // stable machine code, e.g. GOVERNOR_TRANSITION
+  string message = 4;
+  repeated KeyValue attrs = 5;
+}
+
+// /ar/points : platform sparse feature points (world frame), ADR 0004.
+message PointCloud {
+  int64 t_ns = 1;
+  repeated float xyz = 2; // x0,y0,z0,x1,...
+}
+
+// /ar/planes : platform plane anchors (world frame), ADR 0004.
+message PlaneAnchor {
+  int64 t_ns = 1;
+  string id = 2;
+  string kind = 3; // floor | ceiling | wall | table | seat | door | window | horizontal_up | horizontal_down | vertical
+  double cx = 4;
+  double cy = 5;
+  double cz = 6;
+  double nx = 7;
+  double ny = 8;
+  double nz = 9;
+  double ux = 10;
+  double uy = 11;
+  double uz = 12;
+  double extent_u = 13;
+  double extent_v = 14;
+}
+
+// One 2D object box on a keyframe image (schema 1.1.0, ADR 0016). Pixels of the stored keyframe JPEG,
+// top-left origin, x right, y down. cls = core object class id (core/include/capturekit/guide/understanding.hpp).
+message Detection {
+  int32 cls = 1;
+  float score = 2;
+  float x0 = 3;
+  float y0 = 4;
+  float x1 = 5;
+  float y1 = 6;
+}
+
+// /ar/detections : all boxes the shell detector found on one keyframe (schema 1.1.0, ADR 0016).
+// frame_id refers to /frame_index. One message per keyframe, t_ns = that keyframe's t_ns.
+message Detections {
+  int64 t_ns = 1;
+  uint32 frame_id = 2;
+  repeated Detection boxes = 3;
+}
+
+// ---- Derived guidance outputs (schema 1.3.0, ADR 0028). World frame, metres, Y up. Written by the capture core
+// whenever the published value changes (at most once per second of event time) plus one final snapshot; the last
+// record of each channel is the end state. Part 2 may ignore them; replay recomputes them and never feeds them back.
+
+// One lifted object: an oriented box standing on the floor.
+message LabelObject {
+  uint32 id = 1;
+  int32 cls = 2;          // core object class id (core/include/capturekit/guide/understanding.hpp)
+  double cx = 3;          // box centre
+  double cy = 4;
+  double cz = 5;
+  double sx = 6;          // width, height, depth in the box frame
+  double sy = 7;
+  double sz = 8;
+  double yaw = 9;         // rotation about +Y, radians
+  double conf = 10;       // 0..1
+  uint32 n_obs = 11;
+}
+
+// A door or window found in a wall, footprint segment (x0,z0)-(x1,z1) and heights y0..y1 above the floor.
+message LabelOpening {
+  int32 kind = 1;         // 0 door, 1 window
+  string wall = 2;        // shell wall id ("W1"..), may be empty
+  double x0 = 3;
+  double z0 = 4;
+  double x1 = 5;
+  double z1 = 6;
+  double y0 = 7;
+  double y1 = 8;
+  double conf = 9;        // 0..1
+}
+
+// /guide/labels : objects and openings known at t_ns.
+message RoomLabels {
+  int64 t_ns = 1;
+  repeated LabelObject objects = 2;
+  repeated LabelOpening openings = 3;
+}
+
+message ShellWall {
+  string id = 1;          // stable id
+  double x0 = 2;
+  double z0 = 3;
+  double x1 = 4;
+  double z1 = 5;
+  bool inferred = 6;      // hypothesised, not observed
+}
+
+// /guide/shell : the room outline at t_ns.
+message RoomShell {
+  int64 t_ns = 1;
+  repeated ShellWall walls = 2;
+  repeated double corners = 3;   // packed x0,z0,x1,z1,...; closed polygon when `closed`
+  bool closed = 4;
+  bool low_confidence = 5;
+  double ceiling_h = 6;
+  bool ceiling_inferred = 7;
+}
+
+message RoomGap {
+  int32 type = 1;         // 0 missing_wall, 1 unseen_corner, 2 unseen_ceiling, 3 unseen_floor, 4 occluded, 5 weak
+  double x0 = 2;
+  double z0 = 3;
+  double x1 = 4;
+  double z1 = 5;
+  double pri = 6;         // 0..1
+  string why = 7;         // templated phrase, e.g. "behind the sofa"
+}
+
+// /guide/gaps : expected-but-unobserved areas at t_ns.
+message RoomGaps {
+  int64 t_ns = 1;
+  repeated RoomGap gaps = 2;
+}

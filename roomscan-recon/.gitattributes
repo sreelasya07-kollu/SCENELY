@@ -1,0 +1,7 @@
+# LF-only files for the charter lock (hash must match on Windows and CI).
+# scripts/heavy is intentionally not covered here.
+scripts/*.sh                text eol=lf
+scripts/hooks/*.sh          text eol=lf
+.githooks/*                 text eol=lf
+docs/00-PROJECT-CHARTER.md  text eol=lf
+docs/.charter.sha256        text eol=lf

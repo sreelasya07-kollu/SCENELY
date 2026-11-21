@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+runs/
+# datasets: only the fetch scripts and the licence/subset record are committed
+data/*
+!data/fetch.sh
+!data/fetch_replica.py
+!data/extract_nyu.py
+!data/DATASETS.md

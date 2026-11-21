@@ -1,0 +1,286 @@
+{
+  "bundle": "G3",
+  "input": {
+    "delivered": {
+      "accel": 800,
+      "event": 3,
+      "frame": 20,
+      "gyro": 800,
+      "intrinsics": 1,
+      "planes": 10,
+      "points": 20,
+      "pose": 120
+    },
+    "finalized": true,
+    "injected": {
+      "frames_dropped": 0,
+      "jittered": 0,
+      "poses_lost": 16,
+      "thermal_events": 1
+    },
+    "undecodable": 0
+  },
+  "options": {
+    "faults": {
+      "drop_frames": 0.0,
+      "jitter_ms": 0.0,
+      "seed": 7,
+      "thermal": [
+        [
+          2.0,
+          "serious"
+        ]
+      ],
+      "tracking_loss": [
+        [
+          1.0,
+          1.5
+        ]
+      ]
+    },
+    "mode": "fast",
+    "sink_config": {},
+    "sinks": [
+      "metrics",
+      "quality",
+      "governor",
+      "guide"
+    ]
+  },
+  "schema": "ckit.replay/1",
+  "sinks": {
+    "governor": {
+      "config": {
+        "battery_pause_exit_pct": 8,
+        "battery_pause_pct": 5,
+        "battery_warn_exit_pct": 18,
+        "battery_warn_pct": 15,
+        "down_dwell_s": 10,
+        "drop_enter1": 0.1,
+        "drop_enter2": 0.25,
+        "drop_exit1": 0.05,
+        "drop_exit2": 0.15,
+        "frame_budget_ms": 33.3,
+        "kf_scale_reduced": 0.5,
+        "ml_scale_reduced": 0.25,
+        "perf_confirm_s": 1.5,
+        "perf_enter1": 1.25,
+        "perf_enter2": 1.6,
+        "perf_exit1": 1.1,
+        "perf_exit2": 1.35,
+        "version": "g1"
+      },
+      "final_policy": {
+        "capture_resolution_tier": 1,
+        "keyframe_rate_scale": 0.5,
+        "level": "LOWER_RESOLUTION",
+        "ml_rate_scale": 0.25,
+        "must_pause": false,
+        "overlay_enabled": false,
+        "upload_allowed": false
+      },
+      "max_level": "LOWER_RESOLUTION",
+      "safe_pauses": 0,
+      "time_in_level_s": {
+        "LOWER_RESOLUTION": 1.995,
+        "NOMINAL": 2
+      },
+      "transitions": [
+        {
+          "from": "NOMINAL",
+          "reason": "thermal=2",
+          "t_s": 2,
+          "to": "LOWER_RESOLUTION"
+        }
+      ]
+    },
+    "guide": {
+      "engine": {
+        "coverage": {
+          "completeness": 0,
+          "planes": 4,
+          "seen": 0.0543,
+          "valid_cells": 5024
+        },
+        "log": {
+          "by_state": {
+            "ACTIVE": 1,
+            "COMPLETED": 2
+          },
+          "by_type": {
+            "HOLD_STILL": 1,
+            "ROTATE_TOWARD": 1,
+            "SLOW_DOWN": 1
+          },
+          "info_prompts": 0,
+          "instructions": 3,
+          "median_time_to_compliance_s": 1.4,
+          "plans": 8,
+          "plans_with_target": 4,
+          "repetition_rate": 0,
+          "target_switches": 1,
+          "unsafe_targets": 0
+        },
+        "nav": {
+          "floor_y": 0,
+          "free_cells": 1097,
+          "obstacle_cells": 170,
+          "passable_cells": 1097
+        },
+        "params_hash": "f6a8c2122d0421c2",
+        "planner": {
+          "switches": 1,
+          "target_gain": 141,
+          "target_x": 1.05,
+          "target_z": 5.55,
+          "targets_reached": 0
+        },
+        "tier": "B"
+      },
+      "first_instructions": [
+        {
+          "t_s": 1,
+          "text": "Hold still.",
+          "type": "HOLD_STILL"
+        },
+        {
+          "t_s": 1.533,
+          "text": "Easy, move slower.",
+          "type": "SLOW_DOWN"
+        },
+        {
+          "t_s": 2.933,
+          "text": "Turn right to the unscanned part.",
+          "type": "ROTATE_TOWARD"
+        }
+      ]
+    },
+    "metrics": {
+      "channels": {
+        "accel": {
+          "max_gap_ms": 5,
+          "n": 800,
+          "rate_hz": 200,
+          "rejected_non_monotonic": 0
+        },
+        "event": {
+          "n": 3,
+          "rejected_non_monotonic": 0
+        },
+        "frame": {
+          "max_gap_ms": 200,
+          "n": 20,
+          "rate_hz": 5,
+          "rejected_non_monotonic": 0
+        },
+        "gyro": {
+          "max_gap_ms": 5,
+          "n": 800,
+          "rate_hz": 200,
+          "rejected_non_monotonic": 0
+        },
+        "intrinsics": {
+          "n": 1,
+          "rejected_non_monotonic": 0
+        },
+        "planes": {
+          "max_gap_ms": 1000,
+          "n": 10,
+          "rate_hz": 3,
+          "rejected_non_monotonic": 0
+        },
+        "points": {
+          "max_gap_ms": 200,
+          "n": 20,
+          "rate_hz": 5,
+          "rejected_non_monotonic": 0
+        },
+        "pose": {
+          "max_gap_ms": 33.333,
+          "n": 120,
+          "rate_hz": 30,
+          "rejected_non_monotonic": 0
+        }
+      },
+      "duration_s": 3.995,
+      "events": {
+        "platform.SESSION_IMPORTED": 1,
+        "platform.thermal": 1,
+        "replay.inject.tracking_loss": 1
+      },
+      "keyframes": 20,
+      "path_length_m": 0.9273,
+      "points_total": 2400,
+      "tracking_not_normal": [
+        {
+          "state": 2,
+          "t0_s": 0,
+          "t1_s": 1
+        },
+        {
+          "state": 3,
+          "t0_s": 1,
+          "t1_s": 1.533
+        }
+      ]
+    },
+    "quality": {
+      "config": {
+        "baseline_down": 0.02,
+        "baseline_up": 0.2,
+        "blur_reject_px": 4,
+        "blur_soft_px": 1.5,
+        "clip_reject": 0.4,
+        "clip_soft": 0.1,
+        "corner_cell_min": 2,
+        "default_exposure_ms": 16,
+        "fast_threshold": 20,
+        "limited_penalty": 0.6,
+        "min_corners": 40,
+        "min_gap_ms": 200,
+        "min_spread": 0.4,
+        "rot_deg": 10,
+        "scene_depth_m": 2,
+        "sharp_reject": 0.35,
+        "sharp_soft": 0.6,
+        "target_width": 320,
+        "texture_min": 25,
+        "trans_ratio": 0.1,
+        "version": "q1",
+        "window_ms": 300
+      },
+      "config_hash": "5a16f8463e2696b5",
+      "config_version": "q1",
+      "frames": 20,
+      "hard_reject_histogram": {
+        "MOTION_BLUR": 13,
+        "TRACKING_LOST": 3
+      },
+      "hard_rejected": 13,
+      "keyframes": 3,
+      "keyframes_per_m": 3.2352,
+      "keyframes_per_s": 0.7895,
+      "no_image": 0,
+      "path_m": 0.9273,
+      "reason_histogram": {
+        "MOTION_BLUR": 17,
+        "NOT_BEST": 2,
+        "NOT_NOVEL": 2,
+        "TRACKING_LIMITED": 5,
+        "TRACKING_LOST": 3
+      },
+      "selected_frame_ids": [
+        2,
+        4,
+        15
+      ],
+      "stats": {
+        "blur_risk_px_p50": 5.2786,
+        "blur_risk_px_p90": 8.282,
+        "quality_p50": 0.6,
+        "sharpness_norm_p10": 0.6892,
+        "sharpness_norm_p50": 0.8144
+      }
+    }
+  }
+}

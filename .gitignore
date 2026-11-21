@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+runs/
+
+# Build artifacts
+build/
+bin/
+obj/
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+
+# Data / heavy runs
+roomscan-recon/data/*
+!roomscan-recon/data/fetch.sh
+!roomscan-recon/data/fetch_replica.py
+!roomscan-recon/data/extract_nyu.py
+!roomscan-recon/data/DATASETS.md

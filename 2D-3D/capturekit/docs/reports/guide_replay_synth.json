@@ -1,0 +1,385 @@
+{
+  "bundles": [
+    {
+      "bundle": "G1_synth_60s",
+      "by_type": {
+        "MOVE_TO": 1,
+        "PROGRESS": 1,
+        "ROTATE_TOWARD": 7,
+        "SLOW_DOWN": 1,
+        "TILT_DOWN": 2,
+        "TILT_UP": 2
+      },
+      "coverage_completeness": 0.5519,
+      "coverage_seen": 0.7873,
+      "duration_s": 43.57,
+      "first_instructions": [
+        {
+          "t_s": 2,
+          "text": "Tilt up to scan the ceiling.",
+          "type": "TILT_UP"
+        },
+        {
+          "t_s": 4,
+          "text": "Face left to scan more.",
+          "type": "ROTATE_TOWARD"
+        },
+        {
+          "t_s": 9,
+          "text": "Turn left to the unscanned part.",
+          "type": "ROTATE_TOWARD"
+        },
+        {
+          "t_s": 14,
+          "text": "Turn left toward the unscanned area.",
+          "type": "ROTATE_TOWARD"
+        },
+        {
+          "t_s": 19,
+          "text": "Face left to scan more.",
+          "type": "ROTATE_TOWARD"
+        }
+      ],
+      "instruction_demand_per_min": 17.9,
+      "instructions": 13,
+      "planes": 6,
+      "repetition_rate": 0,
+      "target_switches": 16,
+      "tier": "B",
+      "unsafe_targets": 0
+    },
+    {
+      "bundle": "G2_synth_90s",
+      "by_type": {
+        "MOVE_TO": 5,
+        "PROGRESS": 1,
+        "ROTATE_TOWARD": 13,
+        "SLOW_DOWN": 2,
+        "TILT_DOWN": 1,
+        "TILT_UP": 2
+      },
+      "coverage_completeness": 0.3505,
+      "coverage_seen": 0.9269,
+      "duration_s": 71.8,
+      "first_instructions": [
+        {
+          "t_s": 1.5,
+          "text": "Tilt up to scan the ceiling.",
+          "type": "TILT_UP"
+        },
+        {
+          "t_s": 3.5,
+          "text": "Face left to scan more.",
+          "type": "ROTATE_TOWARD"
+        },
+        {
+          "t_s": 5.5,
+          "text": "Head slightly left, 1 meter.",
+          "type": "MOVE_TO"
+        },
+        {
+          "t_s": 8.5,
+          "text": "Turn left toward the unscanned area.",
+          "type": "ROTATE_TOWARD"
+        },
+        {
+          "t_s": 13,
+          "text": "Quarter done. Keep going.",
+          "type": "PROGRESS"
+        }
+      ],
+      "instruction_demand_per_min": 19.22,
+      "instructions": 23,
+      "planes": 6,
+      "repetition_rate": 0,
+      "target_switches": 25,
+      "tier": "B",
+      "unsafe_targets": 0
+    },
+    {
+      "bundle": "G3_synth_40s",
+      "by_type": {
+        "MOVE_TO": 2,
+        "ROTATE_TOWARD": 8,
+        "SLOW_DOWN": 6,
+        "TILT_DOWN": 1
+      },
+      "coverage_completeness": 0.0607,
+      "coverage_seen": 0.225,
+      "duration_s": 39.995,
+      "first_instructions": [
+        {
+          "t_s": 0.533,
+          "text": "Slow down.",
+          "type": "SLOW_DOWN"
+        },
+        {
+          "t_s": 1.933,
+          "text": "Face left to scan more.",
+          "type": "ROTATE_TOWARD"
+        },
+        {
+          "t_s": 5.033,
+          "text": "Head slightly right, 0.5 meters.",
+          "type": "MOVE_TO"
+        },
+        {
+          "t_s": 5.533,
+          "text": "Slow down.",
+          "type": "SLOW_DOWN"
+        },
+        {
+          "t_s": 7.033,
+          "text": "Face left to scan more.",
+          "type": "ROTATE_TOWARD"
+        }
+      ],
+      "instruction_demand_per_min": 25.5,
+      "instructions": 17,
+      "planes": 6,
+      "repetition_rate": 0.091,
+      "target_switches": 8,
+      "tier": "B",
+      "unsafe_targets": 0
+    },
+    {
+      "bundle": "G4_synth_70s",
+      "by_type": {
+        "MOVE_TO": 2,
+        "PROGRESS": 1,
+        "ROTATE_TOWARD": 13,
+        "SLOW_DOWN": 4,
+        "TILT_DOWN": 1,
+        "TILT_UP": 4
+      },
+      "coverage_completeness": 0.397,
+      "coverage_seen": 0.8469,
+      "duration_s": 69.855,
+      "first_instructions": [
+        {
+          "t_s": 1.5,
+          "text": "Tilt up to scan the ceiling.",
+          "type": "TILT_UP"
+        },
+        {
+          "t_s": 3.5,
+          "text": "Face left to scan more.",
+          "type": "ROTATE_TOWARD"
+        },
+        {
+          "t_s": 7.567,
+          "text": "Aim down at the floor.",
+          "type": "TILT_DOWN"
+        },
+        {
+          "t_s": 8.933,
+          "text": "A bit slower, please.",
+          "type": "SLOW_DOWN"
+        },
+        {
+          "t_s": 9.567,
+          "text": "Turn slightly left toward the unscanned area.",
+          "type": "ROTATE_TOWARD"
+        }
+      ],
+      "instruction_demand_per_min": 20.61,
+      "instructions": 24,
+      "planes": 6,
+      "repetition_rate": 0,
+      "target_switches": 23,
+      "tier": "B",
+      "unsafe_targets": 0
+    },
+    {
+      "bundle": "G5_synth_45s",
+      "by_type": {
+        "MOVE_TO": 1,
+        "ROTATE_TOWARD": 6,
+        "SLOW_DOWN": 4,
+        "TILT_DOWN": 1,
+        "TILT_UP": 2
+      },
+      "coverage_completeness": 0.0835,
+      "coverage_seen": 0.6799,
+      "duration_s": 43.57,
+      "first_instructions": [
+        {
+          "t_s": 0.533,
+          "text": "Slow down.",
+          "type": "SLOW_DOWN"
+        },
+        {
+          "t_s": 2.333,
+          "text": "Aim up at the ceiling.",
+          "type": "TILT_UP"
+        },
+        {
+          "t_s": 4.367,
+          "text": "Head slightly left, 0.5 meters.",
+          "type": "MOVE_TO"
+        },
+        {
+          "t_s": 5.533,
+          "text": "Slow down.",
+          "type": "SLOW_DOWN"
+        },
+        {
+          "t_s": 8.333,
+          "text": "Face left to scan more.",
+          "type": "ROTATE_TOWARD"
+        }
+      ],
+      "instruction_demand_per_min": 19.28,
+      "instructions": 14,
+      "planes": 6,
+      "repetition_rate": 0,
+      "target_switches": 12,
+      "tier": "B",
+      "unsafe_targets": 0
+    },
+    {
+      "bundle": "G6_synth_45s",
+      "by_type": {
+        "KEEP_TURNING": 1,
+        "PROGRESS": 2,
+        "ROTATE_TOWARD": 4,
+        "SLOW_DOWN": 2,
+        "SWEEP": 2,
+        "TILT_DOWN": 1,
+        "TILT_UP": 2
+      },
+      "coverage_completeness": 0.5684,
+      "coverage_seen": 0.8289,
+      "duration_s": 43.57,
+      "first_instructions": [
+        {
+          "t_s": 3,
+          "text": "Turn slowly left to scan the room.",
+          "type": "SWEEP"
+        },
+        {
+          "t_s": 10.833,
+          "text": "Good. Keep turning left.",
+          "type": "KEEP_TURNING"
+        },
+        {
+          "t_s": 12.833,
+          "text": "Tilt up to scan the ceiling.",
+          "type": "TILT_UP"
+        },
+        {
+          "t_s": 15,
+          "text": "Turn slowly left to scan the room.",
+          "type": "SWEEP"
+        },
+        {
+          "t_s": 17.833,
+          "text": "Point the phone up.",
+          "type": "TILT_UP"
+        }
+      ],
+      "instruction_demand_per_min": 15.15,
+      "instructions": 11,
+      "planes": 6,
+      "repetition_rate": 0,
+      "target_switches": 6,
+      "tier": "B",
+      "unsafe_targets": 0
+    },
+    {
+      "bundle": "G7_synth_30s",
+      "by_type": {
+        "MOVE_TO": 1,
+        "ROTATE_TOWARD": 2,
+        "SLOW_DOWN": 3,
+        "TILT_DOWN": 1
+      },
+      "coverage_completeness": 0.0606,
+      "coverage_seen": 0.58,
+      "duration_s": 17.72,
+      "first_instructions": [
+        {
+          "t_s": 0.533,
+          "text": "Slow down.",
+          "type": "SLOW_DOWN"
+        },
+        {
+          "t_s": 2.533,
+          "text": "Face left to scan more.",
+          "type": "ROTATE_TOWARD"
+        },
+        {
+          "t_s": 7.7,
+          "text": "Face left to scan more.",
+          "type": "ROTATE_TOWARD"
+        },
+        {
+          "t_s": 9,
+          "text": "A bit slower, please.",
+          "type": "SLOW_DOWN"
+        },
+        {
+          "t_s": 12.667,
+          "text": "Point the phone down.",
+          "type": "TILT_DOWN"
+        }
+      ],
+      "instruction_demand_per_min": 23.7,
+      "instructions": 7,
+      "planes": 5,
+      "repetition_rate": 0,
+      "target_switches": 9,
+      "tier": "B",
+      "unsafe_targets": 0
+    },
+    {
+      "bundle": "G8_synth_40s",
+      "by_type": {
+        "HOLD_STILL": 2,
+        "MORE_LIGHT": 2,
+        "MOVE_TO": 3,
+        "PROGRESS": 1,
+        "ROTATE_TOWARD": 4,
+        "SLOW_DOWN": 3,
+        "TILT_DOWN": 2
+      },
+      "coverage_completeness": 0.485,
+      "coverage_seen": 0.8845,
+      "duration_s": 39.995,
+      "first_instructions": [
+        {
+          "t_s": 2,
+          "text": "Tilt down to scan the floor.",
+          "type": "TILT_DOWN"
+        },
+        {
+          "t_s": 4.367,
+          "text": "Walk slightly left, 0.5 meters.",
+          "type": "MOVE_TO"
+        },
+        {
+          "t_s": 6.367,
+          "text": "Face left to scan more.",
+          "type": "ROTATE_TOWARD"
+        },
+        {
+          "t_s": 11.267,
+          "text": "Head slightly left, 0.5 meters.",
+          "type": "MOVE_TO"
+        },
+        {
+          "t_s": 12,
+          "text": "Hold still.",
+          "type": "HOLD_STILL"
+        }
+      ],
+      "instruction_demand_per_min": 24.0,
+      "instructions": 16,
+      "planes": 5,
+      "repetition_rate": 0,
+      "target_switches": 11,
+      "tier": "B",
+      "unsafe_targets": 0
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+# Local upload stack: tusd (resumable uploads) -> MinIO (S3-compatible storage).
+# Development credentials only; never reuse them in any deployed environment.
+#
+# Note: upstream minio/minio is archived and its Docker Hub images were removed.
+# pgsty/minio and pgsty/mc are maintained drop-in builds of the same code (same CLI/env).
+# See third_party/VERSIONS.md.
+name: capturekit-dev
+
+x-s3-credentials: &s3-credentials
+  MINIO_ROOT_USER: ${MINIO_ROOT_USER:-capturekit}
+  MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-capturekit-dev-only}
+
+services:
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment: *s3-credentials
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # web console
+    volumes:
+      - minio-data:/data
+
+  # One-shot job: waits for MinIO, then creates the "scanbundles" bucket.
+  minio-init:
+    image: pgsty/mc:RELEASE.2026-08-04T00-00-00Z
+    depends_on: [minio]
+    environment: *s3-credentials
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; do
+          echo "waiting for minio..."; sleep 1
+        done
+        mc mb --ignore-existing local/scanbundles
+        echo "bucket scanbundles ready"
+    restart: "no"
+
+  # Marks a bundle COMPLETE/INCOMPLETE/CORRUPT from what is in the bucket (never from hook events).
+  verifier:
+    build: ./verifier
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: scanbundles
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-capturekit}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-capturekit-dev-only}
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
+
+  tusd:
+    image: tusproject/tusd:v2.10.1
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+      verifier:
+        condition: service_started
+    command:
+      - -s3-bucket=scanbundles
+      - -s3-endpoint=http://minio:9000
+      - -s3-disable-ssl
+      - -base-path=/files/
+      - -port=1080
+      - -hooks-http=http://verifier:8081/hook
+      - -hooks-enabled-events=post-finish
+    environment:
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-capturekit}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-capturekit-dev-only}
+      AWS_REGION: us-east-1
+    ports:
+      - "1080:1080"
+
+volumes:
+  minio-data:

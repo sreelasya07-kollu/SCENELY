@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capturekit.dev/scanbundle/camera.schema.json",
+  "title": "Scan Bundle nominal camera",
+  "type": "object",
+  "required": ["model", "width", "height", "fx", "fy", "cx", "cy", "orientation"],
+  "properties": {
+    "model": {"enum": ["PINHOLE", "OPENCV"]},
+    "width": {"type": "integer", "minimum": 1},
+    "height": {"type": "integer", "minimum": 1},
+    "fx": {"type": "number", "exclusiveMinimum": 0},
+    "fy": {"type": "number", "exclusiveMinimum": 0},
+    "cx": {"type": "number"},
+    "cy": {"type": "number"},
+    "distortion": {"type": "array", "items": {"type": "number"}},
+    "orientation": {
+      "type": "object",
+      "required": ["storage", "display_rotation_deg"],
+      "properties": {
+        "storage": {"const": "SENSOR_NATIVE"},
+        "display_rotation_deg": {"enum": [0, 90, 180, 270]}
+      }
+    },
+    "q_camera_from_imu": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4}
+  }
+}

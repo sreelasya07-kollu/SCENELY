@@ -1,0 +1,12 @@
+[submodule "capturekit/third_party/nanobind"]
+	path = capturekit/third_party/nanobind
+	url = https://github.com/wjakob/nanobind.git
+[submodule "capturekit/third_party/eigen"]
+	path = capturekit/third_party/eigen
+	url = https://gitlab.com/libeigen/eigen.git
+[submodule "capturekit/third_party/mcap"]
+	path = capturekit/third_party/mcap
+	url = https://github.com/foxglove/mcap.git
+[submodule "capturekit/third_party/sophus"]
+	path = capturekit/third_party/sophus
+	url = https://github.com/strasdat/Sophus.git

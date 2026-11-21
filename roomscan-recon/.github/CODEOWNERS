@@ -1,0 +1,13 @@
+# Enforced only with branch protection on main: "Require PR" +
+# "Require review from Code Owners" + "Require status checks" (Charter integrity).
+# Without that, the hash check is tamper-EVIDENT, not tamper-PROOF.
+/docs/00-PROJECT-CHARTER.md   @RealKarthiksai
+/docs/.charter.sha256         @RealKarthiksai
+/scripts/_hash.sh             @RealKarthiksai
+/scripts/verify-charter.sh    @RealKarthiksai
+/scripts/lock-charter.sh      @RealKarthiksai
+/scripts/hooks/               @RealKarthiksai
+/.githooks/                   @RealKarthiksai
+/.github/                     @RealKarthiksai
+/.gitattributes               @RealKarthiksai
+/.claude/settings.json        @RealKarthiksai

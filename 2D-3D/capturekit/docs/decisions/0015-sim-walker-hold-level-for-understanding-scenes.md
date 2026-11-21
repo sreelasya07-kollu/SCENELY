@@ -1,0 +1,6 @@
+# 0015: Sim walker hold_level mode for understanding scenes
+
+Status: accepted (2026-11-16). The Phase 8 walker keeps its pitch after a tilt and sweeps +-22/15 deg, so door/window-height wall bands were sampled late and sparsely; area-sampled points also ignored what keyframes viewed (recall 4/6, false windows conf 0.52-0.65).
+Decision: opt-in `sim::Human::hold_level` (default false): hold a completed tilt dwell_s + 0.5 s (1.5 s reset the planner's 3 s dwell, tilt targets never reached, walker stalled), then relax to level; sweeps shrink to 6 deg. Opt-in `sim::Config::view_points`: 120 rays/tick through a jittered 12x10 grid, nearest hit, keep p 1 to 1.5 m falling to 0 at 5 m, noise 0.01 + 0.005 * max(0, range - 2) m. Only understanding_test sets them; false keeps every code path and RNG draw (Overlay.Golden, Guide*, guide-eval byte-identical).
+Free space needs Coverage::views_at >= min_cell_views (3), not a GuideParams key. Detector parameters (min_conf 0.7 and the rest): ADR 0024. Result: door_window 5/6 (gate >= 5/6, no margin; seed 3 misses its door), plain walls 0 false.
+Rejected: a globally level walker with regenerated goldens (breaks ADR 0011 evidence and byte-identity); fixing it in the detector alone (tolerant ring produced false windows).

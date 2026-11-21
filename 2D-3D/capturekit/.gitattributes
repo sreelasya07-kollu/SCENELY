@@ -1,0 +1,5 @@
+bench/fixtures/** filter=lfs diff=lfs merge=lfs -text
+bench/thermal/**/*.csv filter=lfs diff=lfs merge=lfs -text
+bench/fixtures/**/README.md -filter -diff -merge text
+*.sh text eol=lf
+android/sample-app/src/main/assets/*.json text eol=lf

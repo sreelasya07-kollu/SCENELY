@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capturekit.dev/scanbundle/manifest.schema.json",
+  "title": "Scan Bundle manifest",
+  "type": "object",
+  "required": ["schema_version", "bundle_id", "session_id", "device", "conventions", "files", "counts", "clock", "capture_settings", "completion"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "bundle_id": {"type": "string", "minLength": 1},
+    "session_id": {"type": "string", "minLength": 1},
+    "device": {
+      "type": "object",
+      "required": ["platform", "model", "os", "app_version"],
+      "properties": {
+        "platform": {"enum": ["ios", "android", "synthetic", "other"]},
+        "model": {"type": "string"},
+        "os": {"type": "string"},
+        "app_version": {"type": "string"}
+      }
+    },
+    "conventions": {
+      "type": "object",
+      "required": ["world", "camera", "quaternion", "time", "pose"],
+      "properties": {
+        "world": {"const": "Y_UP_GRAVITY_METRES"},
+        "camera": {"const": "OPENCV"},
+        "quaternion": {"const": "WXYZ"},
+        "time": {"const": "MONOTONIC_NS"},
+        "pose": {"const": "T_WORLD_FROM_CAMERA"}
+      }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256", "size", "role"],
+        "properties": {
+          "path": {"type": "string", "pattern": "^[^/][^\\\\]*$"},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "size": {"type": "integer", "minimum": 0},
+          "role": {"enum": ["streams", "camera", "keyframe", "guidance", "config", "redaction", "other"]}
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "required": ["poses", "imu_gyro", "imu_accel", "intrinsics", "frames", "keyframes", "events"],
+      "properties": {
+        "detections": {"type": "integer", "minimum": 0},
+        "guide_labels": {"type": "integer", "minimum": 0},
+        "guide_shell": {"type": "integer", "minimum": 0},
+        "guide_gaps": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": {"type": "integer", "minimum": 0}
+    },
+    "clock": {
+      "type": "object",
+      "required": ["base", "offset_ns", "t_start_ns", "t_end_ns"],
+      "properties": {
+        "base": {"type": "string"},
+        "offset_ns": {"type": "integer"},
+        "t_start_ns": {"type": "integer"},
+        "t_end_ns": {"type": "integer"}
+      }
+    },
+    "capture_settings": {"type": "object"},
+    "completion": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {"enum": ["complete", "partial", "recovered"]},
+        "reason": {"type": "string"}
+      }
+    },
+    "consent": {
+      "type": "object",
+      "properties": {"version": {"type": "string"}, "at": {"type": "string"}}
+    },
+    "privacy": {
+      "type": "object",
+      "properties": {"redaction_mode": {"enum": ["none", "faces"]}}
+    },
+    "validation": {"type": "object"}
+  }
+}

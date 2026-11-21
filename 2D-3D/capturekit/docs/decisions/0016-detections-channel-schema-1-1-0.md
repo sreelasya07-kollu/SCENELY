@@ -1,0 +1,6 @@
+# 0016: /ar/detections channel, schema 1.1.0
+
+Status: accepted (2026-11-17). Phase 9 lifts 2D object boxes from a shell-side detector to 3D, and replay must feed the same boxes back so live and offline results are byte-identical.
+Decision: new optional channel `/ar/detections`, message `capturekit.v1.Detections` {t_ns, frame_id, repeated Detection{cls, score, x0, y0, x1, y1}}, one record per keyframe (t_ns = keyframe t_ns, empty `boxes` = "ran, saw nothing"). Pixels of the stored keyframe JPEG, top-left origin; `cls` = core ObjectClass id (guide/understanding.hpp). Boxes only; masks would be another additive message. Manifest `counts.detections`; writer stamps schema_version 1.1.0; the validator accepts 1.1 and old 1.0.0 bundles (no channel) still validate. Replay hook `ReplaySink::on_detections`, tie-break `... < points < planes < detections`.
+Validator: DETECTION_BAD_BOX (WARN: non-finite, x1<=x0, y1<=y0 or score outside [0,1]), DETECTION_UNKNOWN_FRAME (INFO: frame_id not in /frame_index). Image-bounds are not checked (boxes may overhang).
+Rejected: boxes as `/ar/planes` anchors with kind "object:*" (pollutes a platform channel); JSON side file (not time-aligned, not in MCAP replay).

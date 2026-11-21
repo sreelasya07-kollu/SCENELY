@@ -1,0 +1,12 @@
+{
+  "model": "PINHOLE",
+  "width": 640,
+  "height": 480,
+  "fx": 500,
+  "fy": 500,
+  "cx": 319.5,
+  "cy": 239.5,
+  "distortion": [],
+  "orientation": {"storage": "SENSOR_NATIVE", "display_rotation_deg": 0},
+  "q_camera_from_imu": [0, 1, 0, 0]
+}

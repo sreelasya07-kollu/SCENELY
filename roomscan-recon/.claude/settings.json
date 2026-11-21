@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(/docs/00-PROJECT-CHARTER.md)",
+      "Edit(/docs/.charter.sha256)",
+      "Edit(/scripts/hooks/**)",
+      "Edit(/scripts/*charter*.sh)",
+      "Edit(/scripts/_hash.sh)",
+      "Edit(/.githooks/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/scripts/hooks/protect-charter.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}
