@@ -43,8 +43,7 @@ class ObjectBoxOverlayView(ctx: Context) : View(ctx) {
         private set
     private var floorY: Float? = null                        // GL thread only, refreshed with every applied result
     private var mapErrors = 0L                               // GL thread only
-    private val img = FloatArray(16)
-    private val view = FloatArray(16)
+    private val view = FloatArray(8)                         // GL thread only: one box = 4 corners
 
     /** Off = nothing is mapped or drawn (the HUD "Boxes" chip); tracking continues. Any thread. */
     @Volatile var showBoxes = true
@@ -114,7 +113,7 @@ class ObjectBoxOverlayView(ctx: Context) : View(ctx) {
         return out
     }
 
-    /** Drops everything (scan finished or paused). Any thread; the tracker itself is cleared on the next GL frame via [reset]. */
+    /** Hides the boxes and drops a waiting result (scan paused or finished); the tracks stay remembered. Any thread. [reset] starts a new scan. */
     fun clear() { pending = null; mapped = null; postInvalidate() }
 
     /** New scan: forget every track. Call from the GL thread owner before the scan starts (no frames are running a result yet). */

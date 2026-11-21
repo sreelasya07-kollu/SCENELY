@@ -12,18 +12,71 @@ import UIKit
 
 public protocol CaptureSessionDelegate: AnyObject {
     func captureSession(_ s: CaptureSession, didEmit event: [String: Any])
+    /// The same event, parsed (`EventParser.parseLine`). Called on the poll queue (not the main thread). Lines the parser does not know are skipped.
+    func captureSession(_ s: CaptureSession, didParse event: CoreEvent)
     func captureSession(_ s: CaptureSession, didUpdatePolicy p: ck_policy)
+}
+
+public extension CaptureSessionDelegate {
+    func captureSession(_ s: CaptureSession, didParse event: CoreEvent) {}
+}
+
+public enum CaptureSessionError: Error, Equatable {
+    /// `start` needs `consent_version` + `consent_at` in the config (ConsentStore.sessionConfig()): no consent, no capture.
+    case consentRequired
+    case alreadyStarted
+}
+
+/// One camera frame handed to the live segmentation (ADR 0035/0037): a private copy of the captured image (never an ARFrame),
+/// the camera that took it and the quarter turns (clockwise) that make it upright on screen.
+public struct SegmentationFrame {
+    public let pixelBuffer: CVPixelBuffer
+    public let camera: CameraSnapshot
+    public let tNs: Int64
+    public let quarterTurns: Int
 }
 
 /// Owns one ck_session. Callbacks only copy into the core's bounded queues (never block ARKit's
 /// delegate queue); keyframe JPEGs are encoded on a serial queue; ARKit frames are not retained.
+///
+/// Lifecycle: `resetForCalibration()` (AR tracking reset + motion sensors feed the StillnessCalibrator, no core session yet) ->
+/// the UI waits for `calibrationState == .ready` and `trackingStateName == "TRACKING"` -> `start(config:)` (adds the calibration
+/// result as `calib.*`) -> `finish()`. All UNVERIFIED on a device until the first Mac/iPhone run.
 public final class CaptureSession: NSObject, ARSessionDelegate, @unchecked Sendable {
     public let dir: URL
     public weak var delegate: CaptureSessionDelegate?
     public private(set) var droppedAtEdge = 0
 
+    /// The AR session, exposed read-only so the preview view can show it (`ARSCNView.session = captureSession.arSession`).
+    public let arSession = ARSession()
+
+    /// Live segmentation hooks. Set BEFORE `start`; both are called on ARKit's delegate queue and must not block.
+    /// `segmentationGate(tNs, trackingNormal)` is the cheap rate check (true = this frame is wanted); the sink then gets the frame.
+    public var segmentationGate: ((Int64, Bool) -> Bool)?
+    public var segmentationSink: ((SegmentationFrame) -> Void)?
+
+    /// For the upright-rotation of segmentation frames: the UI's interface orientation and the preview size (set from the main thread).
+    public var interfaceOrientation: UIInterfaceOrientation {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _orientation }
+        set { stateLock.lock(); _orientation = newValue; stateLock.unlock() }
+    }
+    public var viewportSize: CGSize {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _viewport }
+        set { stateLock.lock(); _viewport = newValue; stateLock.unlock() }
+    }
+
+    // Calibration / tracking state, read by the UI from the main thread, written on the AR and motion queues.
+    private let stateLock = NSLock()
+    private var calibrator: StillnessCalibrator?
+    private var _trackingName = "STOPPED"
+    private var _arResetting = false
+    private var _orientation: UIInterfaceOrientation = .portrait
+    private var _viewport = CGSize(width: 390, height: 844)
+    private var arRunning = false
+    private var motionRunning = false
+    private var redactor: FaceRedactor?
+
     private var handle: OpaquePointer?
-    private let arSession = ARSession()
     private let motion = CMMotionManager()
     private let motionQueue = OperationQueue()
     private let encodeQueue = DispatchQueue(label: "dev.capturekit.encode")
@@ -55,27 +108,76 @@ public final class CaptureSession: NSObject, ARSessionDelegate, @unchecked Senda
     private static func tNs(_ seconds: TimeInterval) -> Int64 { Int64((seconds * 1e9).rounded()) }
     private var nowNs: Int64 { Self.tNs(ProcessInfo.processInfo.systemUptime) } // same base as ARFrame/CMLogItem
 
-    public func start(config: [String: Any] = [:]) throws {
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        var cfg: [String: Any] = [
-            "platform": "ios", "model": UIDevice.current.model, "os": UIDevice.current.systemVersion,
-            "clock_base": "systemUptime", "clock_offset_ns": 0,
-        ]
-        config.forEach { cfg[$0.key] = $0.value }
-        let json = String(data: try JSONSerialization.data(withJSONObject: cfg, options: [.sortedKeys]), encoding: .utf8)!
-        var err = CK_OK
-        guard let h = ck_session_create(dir.path, json, &err) else { throw NSError(domain: "CaptureKit", code: Int(err.rawValue)) }
-        handle = h
-        try store?.upsert(dir: dir.path, status: "recording")
-        guard ck_session_start(h, nowNs) == CK_OK else { throw NSError(domain: "CaptureKit", code: 1) }
-
+    private static func makeARConfig() -> ARWorldTrackingConfiguration {
         let cfgAR = ARWorldTrackingConfiguration()
         cfgAR.worldAlignment = .gravity                       // Y up, gravity aligned
         cfgAR.planeDetection = [.horizontal, .vertical]
         if let hi = ARWorldTrackingConfiguration.supportedVideoFormats.max(by: { $0.imageResolution.width < $1.imageResolution.width }) {
             _ = hi // Phase 6 device task: evaluate the recommended high-res format for keyframes vs thermal cost.
         }
-        arSession.run(cfgAR, options: [.resetTracking, .removeExistingAnchors])
+        return cfgAR
+    }
+
+    // MARK: calibration (ADR 0036, contract C1)
+
+    /// Pre-scan hold-still step: resets ARKit tracking and anchors, starts the motion sensors and a fresh StillnessCalibrator.
+    /// Only before `start`. The UI reads `calibrationState`, `calibrationProgress`, `calibrationNeedsTableHint`, `arResetting`
+    /// and `trackingStateName` (feed them to `CalibrationCard`). Call again for "recalibrate".
+    public func resetForCalibration() {
+        guard handle == nil else { return }
+        stateLock.lock()
+        calibrator = StillnessCalibrator(startNs: nowNs)
+        _arResetting = true
+        _trackingName = "STOPPED"
+        stateLock.unlock()
+        arSession.run(Self.makeARConfig(), options: [.resetTracking, .removeExistingAnchors])
+        arRunning = true
+        startMotion()
+    }
+
+    /// Stops the preview-only AR session and sensors (leaving the capture screen before a scan started). No-op once a scan runs.
+    public func stopPreview() {
+        guard handle == nil else { return }
+        arSession.pause(); arRunning = false
+        stopMotion()
+        stateLock.lock(); calibrator = nil; _arResetting = false; _trackingName = "STOPPED"; stateLock.unlock()
+    }
+
+    private var currentCalibrator: StillnessCalibrator? { stateLock.lock(); defer { stateLock.unlock() }; return calibrator }
+    public var calibrationState: StillnessCalibrator.State? { currentCalibrator?.state }
+    public var calibrationProgress: Double { currentCalibrator?.progress ?? 0 }
+    public var calibrationNeedsTableHint: Bool { currentCalibrator?.needsTableHint(nowNs: nowNs) ?? false }
+    /// True from `resetForCalibration` until ARKit delivers its first frame afterwards.
+    public var arResetting: Bool { stateLock.lock(); defer { stateLock.unlock() }; return _arResetting }
+    /// Android names: "TRACKING" (ARKit .normal), "PAUSED" (.limited), "STOPPED" (.notAvailable / not running).
+    public var trackingStateName: String { stateLock.lock(); defer { stateLock.unlock() }; return _trackingName }
+
+    // MARK: start
+
+    /// Starts the core session. `config` = `SessionConfigBuilder.build(...)` (feature flags, consent, extras). Throws
+    /// `consentRequired` without `consent_version` + `consent_at`. The calibration result, when ready, is added as `calib.*`
+    /// (keys already in `config` win). Redaction mode "faces" turns on `FaceRedactor` for every keyframe.
+    public func start(config: SessionConfig = [:]) throws {
+        guard handle == nil else { throw CaptureSessionError.alreadyStarted }
+        guard config["consent_version"] != nil, config["consent_at"] != nil else { throw CaptureSessionError.consentRequired }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var cfg: SessionConfig = [
+            "platform": .string("ios"), "model": .string(UIDevice.current.model), "os": .string(UIDevice.current.systemVersion),
+            "clock_base": .string("systemUptime"), "clock_offset_ns": .int(0),
+        ]
+        currentCalibrator?.finalResult()?.toSessionConfig().forEach { cfg[$0.key] = $0.value }
+        config.forEach { cfg[$0.key] = $0.value }
+        redactor = (cfg["redaction_mode"] == ConfigValue.string("faces")) ? FaceRedactor(bundleDir: dir) : nil
+        var err = CK_OK
+        guard let h = ck_session_create(dir.path, SessionConfigJSON.encode(cfg), &err) else { throw NSError(domain: "CaptureKit", code: Int(err.rawValue)) }
+        handle = h
+        try store?.upsert(dir: dir.path, status: "recording")
+        guard ck_session_start(h, nowNs) == CK_OK else { throw NSError(domain: "CaptureKit", code: 1) }
+
+        if !arRunning {   // normally already running from the calibration step: do not reset tracking again
+            arSession.run(Self.makeARConfig(), options: [.resetTracking, .removeExistingAnchors])
+            arRunning = true
+        }
         startMotion()
         thermal.stop()
         thermal.start()
@@ -83,29 +185,59 @@ public final class CaptureSession: NSObject, ARSessionDelegate, @unchecked Senda
     }
 
     private func startMotion() {
-        guard motion.isGyroAvailable, motion.isAccelerometerAvailable else { return }
+        guard !motionRunning, motion.isGyroAvailable, motion.isAccelerometerAvailable else { return }
+        motionRunning = true
         motion.gyroUpdateInterval = 1.0 / 200
         motion.accelerometerUpdateInterval = 1.0 / 200
+        if motion.isDeviceMotionAvailable {
+            // Bias-removed rotation rate: StillnessCalibrator.onGyro (the Android TYPE_GYROSCOPE analogue). Axis frame UNVERIFIED.
+            motion.deviceMotionUpdateInterval = 1.0 / 100
+            motion.startDeviceMotionUpdates(to: motionQueue) { [weak self] d, _ in
+                guard let self, let d else { return }
+                self.currentCalibrator?.onGyro(Self.tNs(d.timestamp), d.rotationRate.x, d.rotationRate.y, d.rotationRate.z)
+            }
+        }
         motion.startGyroUpdates(to: motionQueue) { [weak self] d, _ in
-            guard let self, let h = self.handle, let d else { return }
-            var m = ck_imu(t_ns: Self.tNs(d.timestamp), v: (d.rotationRate.x, d.rotationRate.y, d.rotationRate.z))
+            guard let self, let d else { return }
+            let t = Self.tNs(d.timestamp)
+            self.currentCalibrator?.onRawGyro(t, d.rotationRate.x, d.rotationRate.y, d.rotationRate.z)
+            guard let h = self.handle else { return }
+            var m = ck_imu(t_ns: t, v: (d.rotationRate.x, d.rotationRate.y, d.rotationRate.z))
             self.note(ck_ingest_gyro(h, &m))
         }
         motion.startAccelerometerUpdates(to: motionQueue) { [weak self] d, _ in
-            guard let self, let h = self.handle, let d else { return }
+            guard let self, let d else { return }
             // CoreMotion reports acceleration in g; the bundle stores m/s^2 specific force (negated gravity sign kept as delivered).
-            var m = ck_imu(t_ns: Self.tNs(d.timestamp), v: (d.acceleration.x * 9.80665, d.acceleration.y * 9.80665, d.acceleration.z * 9.80665))
+            let g = StillnessCalibrator.gravity
+            let t = Self.tNs(d.timestamp)
+            self.currentCalibrator?.onAccel(t, d.acceleration.x * g, d.acceleration.y * g, d.acceleration.z * g)
+            guard let h = self.handle else { return }
+            var m = ck_imu(t_ns: t, v: (d.acceleration.x * g, d.acceleration.y * g, d.acceleration.z * g))
             self.note(ck_ingest_accel(h, &m))
         }
+    }
+
+    private func stopMotion() {
+        guard motionRunning else { return }
+        motionRunning = false
+        motion.stopDeviceMotionUpdates(); motion.stopGyroUpdates(); motion.stopAccelerometerUpdates()
     }
 
     private func note(_ st: ck_status) { if st == CK_ERR_FULL { droppedAtEdge += 1 } }
 
     // MARK: ARSessionDelegate (ARKit camera.transform is world_from_camera with GL axes)
     public func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        let cam = frame.camera
+        stateLock.lock()
+        _arResetting = false
+        switch cam.trackingState {
+        case .normal: _trackingName = "TRACKING"
+        case .limited: _trackingName = "PAUSED"
+        case .notAvailable: _trackingName = "STOPPED"
+        }
+        stateLock.unlock()
         guard let h = handle else { return }
         let t = Self.tNs(frame.timestamp)
-        let cam = frame.camera
         let tf = cam.transform
         let q = simd_quatf(tf)
         var pose = ck_pose(t_ns: t, t: (Double(tf.columns.3.x), Double(tf.columns.3.y), Double(tf.columns.3.z)),
@@ -141,9 +273,34 @@ public final class CaptureSession: NSObject, ARSessionDelegate, @unchecked Senda
         let st = ck_ingest_frame(h, &f)
         note(st)
         guard st == CK_OK, let copy = Self.copy(pb) else { return }
-        ringLock.lock(); defer { ringLock.unlock() }
+        ringLock.lock()
         ring[id] = copy; ringOrder.append(id)
         while ringOrder.count > Self.ringSize { ring.removeValue(forKey: ringOrder.removeFirst()) }
+        ringLock.unlock()
+        feedSegmentation(frame, copy, t)
+    }
+
+    /// Hands the ring copy (never modified afterwards: the redactor works on its own copy) to the live segmentation when its gate
+    /// says a run is due. Cheap when not due; never blocks.
+    private func feedSegmentation(_ frame: ARFrame, _ copy: CVPixelBuffer, _ t: Int64) {
+        guard let gate = segmentationGate, let sink = segmentationSink else { return }
+        let cam = frame.camera
+        var normal = false
+        if case .normal = cam.trackingState { normal = true }
+        guard gate(t, normal) else { return }
+        let tf = cam.transform, K = cam.intrinsics, res = cam.imageResolution
+        let flat: [Float] = [tf.columns.0.x, tf.columns.0.y, tf.columns.0.z, tf.columns.0.w,
+                             tf.columns.1.x, tf.columns.1.y, tf.columns.1.z, tf.columns.1.w,
+                             tf.columns.2.x, tf.columns.2.y, tf.columns.2.z, tf.columns.2.w,
+                             tf.columns.3.x, tf.columns.3.y, tf.columns.3.z, tf.columns.3.w]
+        let snap = CameraSnapshot(columnMajor: flat, fx: Double(K[0][0]), fy: Double(K[1][1]), cx: Double(K[2][0]), cy: Double(K[2][1]),
+                                  w: Int(res.width), h: Int(res.height))
+        // Where the image +x axis points on screen (view y down) decides the quarter turns that make it upright.
+        // displayTransform maps normalised image coordinates to normalised view coordinates. UNVERIFIED on device.
+        let dt = frame.displayTransform(for: interfaceOrientation, viewportSize: viewportSize)
+        let p0 = CGPoint(x: 0, y: 0).applying(dt), p1 = CGPoint(x: 1, y: 0).applying(dt)
+        let turns = RfDetr.quarterTurns(dxView: Float(p1.x - p0.x), dyView: Float(p1.y - p0.y))
+        sink(SegmentationFrame(pixelBuffer: copy, camera: snap, tNs: t, quarterTurns: turns))
     }
 
     /// Deep copy so ARKit's frame pool is never starved by retained buffers.
@@ -219,6 +376,7 @@ public final class CaptureSession: NSObject, ARSessionDelegate, @unchecked Senda
                     encodeQueue.async { [weak self] in self?.encode(UInt32(id), file) }
                 }
                 delegate?.captureSession(self, didEmit: o)
+                if let parsed = EventParser.parseLine(String(line)) { delegate?.captureSession(self, didParse: parsed) }
             }
         }
         var p = ck_policy(); if ck_policy_get(h, &p) == CK_OK { delegate?.captureSession(self, didUpdatePolicy: p) }
@@ -226,8 +384,18 @@ public final class CaptureSession: NSObject, ARSessionDelegate, @unchecked Senda
 
     private func encode(_ id: UInt32, _ rel: String) {
         guard let h = handle else { return }
-        ringLock.lock(); let pb = ring[id]; ringLock.unlock()
-        guard let pb else { _ = ck_keyframe_written(h, id, 0); return }
+        ringLock.lock(); let ringed = ring[id]; ringLock.unlock()
+        guard var pb = ringed else { _ = ck_keyframe_written(h, id, 0); return }
+        if let redactor {
+            // Face redaction before any pixel is encoded: work on a private copy (the ring copy feeds the segmentation) and fail
+            // closed: a copy or detector failure means the keyframe is NOT written (ck_keyframe_written(..., 0)).
+            guard let work = Self.copy(pb) else {
+                redactor.recordDropped(id: Int(id), file: rel)
+                _ = ck_keyframe_written(h, id, 0); return
+            }
+            guard redactor.redact(work, id: Int(id), file: rel) else { _ = ck_keyframe_written(h, id, 0); return }
+            pb = work
+        }
         let target = dir.appendingPathComponent(rel), tmp = dir.appendingPathComponent(rel + ".tmp")
         try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
         let image = CIImage(cvPixelBuffer: pb)
@@ -245,11 +413,13 @@ public final class CaptureSession: NSObject, ARSessionDelegate, @unchecked Senda
     /// Stops capture, lets pending keyframes encode, finalizes the bundle.
     public func finish() -> ck_status {
         guard let h = handle else { return CK_ERR_STATE }
-        arSession.pause(); motion.stopGyroUpdates(); motion.stopAccelerometerUpdates(); thermal.stop()
+        arSession.pause(); arRunning = false; stopMotion(); thermal.stop()
+        segmentationGate = nil; segmentationSink = nil
         _ = ck_session_stop(h, nowNs)
         Thread.sleep(forTimeInterval: 0.3); pollQueue.sync { drain() }
         encodeQueue.sync {}
         pollTimer?.cancel()
+        redactor?.writeJson(to: dir)   // privacy/redaction.json, before finalize so the manifest sees the file
         let st = ck_session_finalize(h)
         try? store?.setStatus(dir: dir.path, status: st == CK_OK ? "complete" : "unrecoverable")
         ck_session_destroy(h); handle = nil

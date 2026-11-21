@@ -46,11 +46,15 @@ class LiveObjectTracker(private val memory: TrackMemory = TrackMemory()) {
             SegPrompt(null, SurfaceKind.OBJECT, i.label, i.cx, i.cy, i.box, centre, i.coco, i.score)
         }
         val tracks = memory.assign(prompts, res.tNs)
+        val remembered = memory.snapshot().associate { it.id to it.centre }   // after assign: a hit-test miss keeps the old centre
         for ((k, t) in tracks.withIndex()) {
             val i = res.instances[k]
-            val c = prompts[k].centre
+            val c = remembered[t.id]
             val bx = (i.box.x0 + i.box.x1) / 2; val by = (i.box.y0 + i.box.y1) / 2
-            extras[t.id] = Extra((i.box.x1 - i.box.x0) / 2, (i.box.y1 - i.box.y0) / 2, bx - i.cx, by - i.cy,
+            // Offsets are relative to where the centre projects: this sighting's centroid pixel, or (hit-test miss) the remembered centre.
+            val anchor = if (prompts[k].centre != null) null else c?.let { res.camera.project(it) }
+            val ax = anchor?.get(0) ?: i.cx; val ay = anchor?.get(1) ?: i.cy
+            extras[t.id] = Extra((i.box.x1 - i.box.x0) / 2, (i.box.y1 - i.box.y0) / 2, bx - ax, by - ay,
                 if (c != null) res.camera.depthOf(c) else 0.0, nowMs)
         }
         val alive = memory.snapshot().map { it.id }.toSet()

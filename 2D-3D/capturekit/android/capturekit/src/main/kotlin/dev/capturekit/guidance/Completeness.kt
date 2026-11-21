@@ -46,7 +46,8 @@ object Completeness {
             }
             for (g in o.gaps) zones.add(WeakZone("gap", null, g.x, g.z, "Look at the unseen area (${g.type.replace('_', ' ')})", g.pri.coerceIn(0.0, 1.0)))
         }
-        for (t in live) if (t.seenCount < CONFIRM_SIGHTINGS)
+        // Only tracks with a 3D centre: C3 x / z are metres, an object without one has no place to send the user to.
+        for (t in live) if (t.seenCount < CONFIRM_SIGHTINGS && t.centreWorld != null)
             zones.add(WeakZone("object", null, t.centreWorld?.x?.toDouble(), t.centreWorld?.z?.toDouble(), "Look at the ${LabelMap.displayName(t.label)} again", 0.5))
         val sorted = zones.sortedWith(compareByDescending<WeakZone> { it.pri }.thenBy { it.text })
         val confirmed = objects.count { it.confirmed }

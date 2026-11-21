@@ -122,6 +122,17 @@ class ObjectBoxesTest {
         assertEquals(own, t.drawBoxes(cam, 1100, listOf(core), null).single().box)   // no floor height: no core box
     }
 
+    @Test fun aHitTestMissKeepsTheRememberedCentreAndScalesWithDepth() {
+        val t = LiveObjectTracker()
+        t.apply(chair(chairAt), 1000, hitAt(chairAt))
+        // Next sighting: same place in the image, but the hit test finds nothing. The track keeps its centre and depth.
+        t.apply(chair(chairAt, cam, 1), 1200, none)
+        val o = t.objects(1200).single()
+        assertEquals(chairAt, o.centreWorld); assertEquals(2, o.seenCount)
+        assertEquals(100f, t.drawBoxes(cam, 1300).single().box.let { it.x1 - it.x0 }, 0.5f)
+        assertEquals(50f, t.drawBoxes(movedBack(2.0), 1300).single().box.let { it.x1 - it.x0 }, 0.5f)   // scaled by the remembered depth
+    }
+
     @Test fun clearForgetsEverything() {
         val t = LiveObjectTracker()
         t.apply(chair(chairAt), 1000, hitAt(chairAt))

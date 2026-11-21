@@ -56,6 +56,8 @@ class CompletenessTest {
         assertEquals("Look at the chair again", z[2].text); assertEquals(1.0, z[2].x!!, 1e-9)
         assertEquals("Look at the unseen area (behind furniture)", z[3].text)
         assertTrue(z.none { it.wallId == 3 })
+        // An unconfirmed object without a 3D centre is not a weak zone (x / z are metres).
+        assertTrue(Completeness.compute(overlay(1.0), listOf(live(9, "chair", 1))).weakZones.isEmpty())
     }
 
     @Test fun zonesAreCappedAndAGoodScanHasNone() {

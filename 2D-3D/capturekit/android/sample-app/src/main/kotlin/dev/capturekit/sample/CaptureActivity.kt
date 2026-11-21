@@ -154,7 +154,7 @@ class CaptureActivity : Activity(), SessionManager.Listener {
         hud = Hud(this, features)
         hud.pauseEnabled = true
         hud.button.setOnClickListener { if (session == null) start() else stop() }
-        hud.pauseButton.setOnClickListener { togglePause() }
+        hud.pauseButton.setOnClickListener { hud.onAction(if (corePaused) ScanActions.Kind.RESUME else ScanActions.Kind.PAUSE) }   // same path as the voice command
         hud.onAction = { k ->
             if (recording && !finishing) {
                 val o = scanActions.run(k)

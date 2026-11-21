@@ -14,8 +14,8 @@ import com.google.ai.edge.litert.TensorBuffer
  * large constants mis-execute on the ML Drift GPU delegate, so clspos / pospatch / query_feat are fed as inputs.
  * One shared [Environment]. GPU only: when it cannot be created the feature turns itself off (CPU would take 0.3 to 0.7 s).
  * UNVERIFIED until a device run: GPU creation on LiteRT 2.3.2 (the card measured 2.2.0), the proposal cell order
- * (row-major assumed), and the slot probing below (an input slot is found by writing each candidate array, largest first,
- * until one is accepted; outputs are told apart by their float count). Single-threaded: [segment] runs on the segmentation thread.
+ * (row-major assumed), and that readFloat() on a fresh input buffer returns its full size (inputs and outputs are both told
+ * apart by float count). Single-threaded: [segment] runs on the segmentation thread.
  */
 class RfDetrSegmenter private constructor(
     private val env: Environment,
@@ -78,15 +78,18 @@ class RfDetrSegmenter private constructor(
             try { context.assets.open(asset).use { RfDetr.loadFloats(it.readBytes(), count) } } catch (_: Throwable) { null }
 
         /**
-         * Slot of each candidate array among [bufs]: every buffer is offered the candidates largest first and keeps the
-         * first one it accepts (a write of the wrong float count fails). Null when a candidate found no slot.
+         * Slot of each candidate array among [bufs], told apart by float count: a buffer's size is the length of what
+         * readFloat() returns for it (the counts are all distinct per graph, see RfDetrTest). The matching candidate is
+         * written into its slot. Null when a buffer matches no candidate or two buffers share a size.
          */
         private fun bind(bufs: List<TensorBuffer>, cands: List<FloatArray>): IntArray? {
             val slot = IntArray(cands.size) { -1 }
-            val bySize = cands.indices.sortedByDescending { cands[it].size }
-            for ((bi, b) in bufs.withIndex()) for (ci in bySize) {
-                if (slot[ci] >= 0) continue
-                if (try { b.writeFloat(cands[ci]); true } catch (_: Throwable) { false }) { slot[ci] = bi; break }
+            for ((bi, b) in bufs.withIndex()) {
+                val n = try { b.readFloat().size } catch (_: Throwable) { return null }
+                val ci = cands.indexOfFirst { it.size == n }
+                if (ci < 0 || slot[ci] >= 0) return null
+                slot[ci] = bi
+                b.writeFloat(cands[ci])
             }
             return if (slot.all { it >= 0 }) slot else null
         }
