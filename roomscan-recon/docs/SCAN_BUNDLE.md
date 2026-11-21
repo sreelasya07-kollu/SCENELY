@@ -1,6 +1,6 @@
 # Scan Bundle v0.1 (proposal from the backend side)
 
-The CaptureKit spec does not exist yet. This is the contract the backend (Parts 3 and 4) can
+The CaptureKit spec does not exist yet. This is the contract the backend (Part 2: spatial and recon stages) can
 consume today, with an executable validator. Treat it as a proposal to be agreed with the
 capture app team. Code: `formats/scanbundle.py` (models + validator), `spatial/io/scanbundle.py`
 (adapter), `eval/bundles.py` (reference writer + broken-bundle corpus). Schema:

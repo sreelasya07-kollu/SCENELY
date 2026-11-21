@@ -26,12 +26,12 @@ private class UploadAborted : RuntimeException()
  */
 class UploadWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
     override fun doWork(): Result {
-        val dir = File(inputData.getString(KEY_DIR) ?: return Result.failure())
+        // KEY_DIR is the folder or its scan_*.zip; a folder packed since this was queued is found as the zip (ADR 0040).
+        val dir = resolve(File(inputData.getString(KEY_DIR) ?: return Result.failure()))
         if (!inputData.getBoolean(KEY_CONSENT, false)) return Result.failure(workDataOf(KEY_ERROR to "no upload consent recorded"))
-        val manifest = File(dir, UploadPlan.MANIFEST)
-        if (!manifest.exists()) return Result.failure(workDataOf(KEY_ERROR to "bundle not finalized"))
+        val manifestText = try { BundleArchive.manifestText(dir) } catch (e: java.io.IOException) { return Result.failure(workDataOf(KEY_ERROR to "bundle not finalized")) }
         // Run-time gate: consent may have been revoked since this work was queued.
-        when (UploadPolicy.decide(ConsentStore.get(applicationContext).uploadAllowed(), UploadPolicy.verdictOf(manifest.readText()))) {
+        when (UploadPolicy.decide(ConsentStore.get(applicationContext).uploadAllowed(), UploadPolicy.verdictOf(manifestText))) {
             UploadPolicy.Decision.NO_CONSENT -> return Result.failure(workDataOf(KEY_ERROR to "upload consent revoked"))
             UploadPolicy.Decision.VERDICT_FAIL -> return Result.failure(workDataOf(KEY_ERROR to "scan check failed: not uploaded"))
             UploadPolicy.Decision.NO_VERDICT -> return Result.failure(workDataOf(KEY_ERROR to "bundle not finalized"))
@@ -52,7 +52,9 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params)
             is TusUploader.Outcome.Complete -> {
                 val marker = UploadPolicy.verifiedMarker(dir)
                 if (inputData.getBoolean(KEY_DELETE, false)) {
-                    dir.deleteRecursively()
+                    val key = BundleArchive.dirOf(dir)
+                    dir.deleteRecursively()   // the zip or the folder this run uploaded
+                    if (key != dir) key.deleteRecursively() else BundleArchive.archiveFor(key).delete()   // and the other form, if both are there
                     dev.capturekit.capture.ResearchReport.deleteSiblings(dir)   // field research file lives beside the bundle
                     marker.delete()
                 } else {
@@ -71,7 +73,18 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params)
         const val KEY_PROGRESS = "progress"
         private const val TAG = "capturekit-upload"
 
-        private fun name(bundle: File) = "upload-${bundle.name}"
+        /** Keyed by the folder name, so the folder and its zip are one job. */
+        private fun name(bundle: File) = "upload-${BundleArchive.dirOf(bundle).name}"
+
+        /** The form of the bundle that exists now: the given path if it is a complete folder (or a zip), else `<folder>.zip`. */
+        private fun resolve(p: File): File {
+            val zip = BundleArchive.archiveFor(BundleArchive.dirOf(p))
+            return when {
+                p.isDirectory && File(p, UploadPlan.MANIFEST).isFile -> p
+                zip.isFile -> zip
+                else -> p
+            }
+        }
 
         /**
          * One unique job per bundle. [replace] = false: enqueueing while pending is a no-op (KEEP; a finished job is

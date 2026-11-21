@@ -1,6 +1,6 @@
 # roomscan-recon
 
-**3D Room Reconstruction & Spatial Understanding** (Part 3 & Part 4 of the 2D-3D Room Scanner Program).
+**3D Room Reconstruction & Spatial Understanding**: Part 2 of SCENELY, the backend of the program. Part 1 is the phone capture app in [`../2D-3D`](../2D-3D/README.md); the two live in one monorepo.
 
 `roomscan-recon` takes calibrated multi-view camera frames, sensor depth, and priors produced by mobile capture (Part 1 / `2D-3D`) and performs end-to-end spatial understanding, TSDF fusion, plane/room estimation, photogrammetric reconstruction, and 3D Gaussian Splatting (novel view synthesis).
 
@@ -12,7 +12,7 @@
 Input: Scan Bundle / Replica / ETH3D / TUM
    │
    ▼
-[Part 3: spatial/]
+[Part 2 spatial stage: spatial/]
    ├── Phase 1: Ingest & Keyframe Selection (spatial.io)
    ├── Phase 2: Pose Refinement & Metric Alignment (spatial.sfm)
    ├── Phase 3: Depth Alignment, Filtering & TSDF Fusion (spatial.depth, spatial.fusion)
@@ -20,7 +20,7 @@ Input: Scan Bundle / Replica / ETH3D / TUM
    └── Phase 6: SpatialMap Packaging (spatial.spatial_map)
    │
    ▼
-[Part 4: recon/]
+[Part 2 recon stage: recon/]
    ├── Phase 7: Sparse Hand-over to OpenMVS (recon.sparse)
    ├── Phase 8: Dense Point Cloud, Mesh & Texture (recon.dense, recon.openmvs)
    ├── Phase 9: 3D Gaussian Splatting (gsplat) & Novel View Synthesis (recon.splat)
@@ -46,28 +46,37 @@ Input: Scan Bundle / Replica / ETH3D / TUM
 
 ```bash
 # Using uv (recommended)
-uv sync
+uv sync --extra cpu
 ```
 
-### 2. Run Spatial Understanding (Part 3)
+### 2. Run Spatial Understanding (Part 2 spatial stage)
+
+Fetch a benchmark scene first (datasets are never committed; see [data/DATASETS.md](data/DATASETS.md)):
 
 ```bash
-python -m spatial.cli run \
-    --dataset scanbundle \
-    --src data/sample_room \
-    --out runs/sample_run \
-    --keyframes
+bash data/fetch.sh replica        # -> data/replica/room0, data/replica/office0
 ```
 
-### 3. Run 3D Reconstruction & Splatting (Part 4)
+```bash
+uv run python -m spatial.cli run \
+    --dataset replica \
+    --src data/replica/room0 \
+    --out runs/sample_run
+```
+
+To run on a real Scan Bundle from Part 1, use `--dataset scanbundle --src <bundle dir>` (contract: [docs/SCAN_BUNDLE.md](docs/SCAN_BUNDLE.md)).
+
+### 3. Run 3D Reconstruction & Splatting (Part 2 recon stage)
 
 ```bash
-python -m recon.cli run \
+uv run python -m recon.cli \
     --spatial-map runs/sample_run/spatial_map \
     --out runs/sample_run/reconstruction \
     --splat auto \
     --heldout-every 8
 ```
+
+The `run` subcommand is not accepted by `recon.cli` (known issue T-030 in [docs/04-TASKS.md](docs/04-TASKS.md)), so the command above omits it. Splat training needs an NVIDIA GPU; see [docs/heavy-compute/GPU_RUNBOOK.md](docs/heavy-compute/GPU_RUNBOOK.md).
 
 ---
 

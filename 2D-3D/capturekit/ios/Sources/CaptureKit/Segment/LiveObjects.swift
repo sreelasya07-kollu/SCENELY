@@ -36,14 +36,22 @@ public struct LiveObject: Equatable {
     public let firstSeenNs: Int64
     public let lastSeenNs: Int64
     public let state: LiveState
+
+    /// Scanned (ADR 0038): located in 3D and seen at least `LiveObjectTracker.scannedMinSightings` times. Derived, so immutable.
+    public var scanned: Bool { centreWorld != nil && seenCount >= LiveObjectTracker.scannedMinSightings }
 }
 
 /// One box to draw this frame, in camera-image pixels: `solid` = seen in the last result, else remembered (dashed, "seen" tag).
+/// `scanned` = see `LiveObject.scanned` (drawn green with a check, else amber).
 public struct DrawBox: Equatable {
     public let trackId: Int
     public let text: String
     public let box: Box2
     public let solid: Bool
+    public let scanned: Bool
+    public init(trackId: Int, text: String, box: Box2, solid: Bool, scanned: Bool = false) {
+        self.trackId = trackId; self.text = text; self.box = box; self.solid = solid; self.scanned = scanned
+    }
 }
 
 public enum MaskMath {
@@ -86,6 +94,8 @@ public final class LiveObjectTracker {
     public static let freshMs: Int64 = 1500
     /// Core object box and track match when their centres are this close (metres).
     public static let coreMatchM: Float = 0.6
+    /// An object counts as scanned once it was seen this many times and has a 3D centre (ADR 0038).
+    public static let scannedMinSightings = 3
 
     /// Box geometry relative to the centroid pixel, in pixels at the time of the result, plus when it arrived.
     private struct Extra { let halfW: Float, halfH: Float, offX: Float, offY: Float, depth: Double, appliedMs: Int64 }
@@ -147,7 +157,7 @@ public final class LiveObjectTracker {
             } else if nowMs - ex.appliedMs <= LiveObjectTracker.noCentreMs, let b = o.boxImg {
                 box = b
             }
-            if let b = box { out.append(DrawBox(trackId: o.trackId, text: text, box: b, solid: solid)) }
+            if let b = box { out.append(DrawBox(trackId: o.trackId, text: text, box: b, solid: solid, scanned: o.scanned)) }
         }
         return out
     }

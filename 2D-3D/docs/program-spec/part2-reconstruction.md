@@ -4,7 +4,7 @@
 > user's requirements. It handles geometry reconstruction, depth estimation, point clouds, meshes, Gaussian Splatting
 > and semantic room modelling, producing the required final 3D outputs.
 
-**Not part of this repository.** Part 2 is built in the separate repository `roomscan-recon`. This file is kept
+**Not part of this repository.** Part 2 is built in the sibling directory `roomscan-recon` of the same monorepo. This file is kept
 here only as a contract reference, so Part 1 decisions (bundle, conventions) stay compatible.
 
 ## 1. Input contract

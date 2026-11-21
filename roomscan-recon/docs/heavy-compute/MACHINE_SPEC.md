@@ -39,7 +39,7 @@ NOT_IMPLEMENTED or have a TODO command are listed separately: no machine runs th
 ## Recommendation
 
 **T1 is the minimum** that runs every currently implemented GPU item (largest VRAM need among
-runnable items is 8 GB; 24 GB covers the splat training estimates of 16 GB once Part 4 exists).
+runnable items is 8 GB; 24 GB covers the splat training estimates of 16 GB once the Part 2 recon stage exists).
 **T2 is recommended**: P3-10 stress (24 GB VRAM, 64 GB RAM), OpenMVS full-res densify (64 GB RAM)
 and the end-to-end runs (64 GB RAM, 100 GB disk) fit with margin, and 1 TB NVMe holds all
 datasets (56.9 GB) plus several full runs. All resource figures are ESTIMATES (see inventory

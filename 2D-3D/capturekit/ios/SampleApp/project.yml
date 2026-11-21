@@ -9,13 +9,30 @@ targets:
   SampleApp:
     type: application
     platform: iOS
-    sources: [Sources]
-    dependencies: [{ package: CaptureKit }]
+    sources:
+      - Sources          # includes Sources/Resources (consent_v1.txt, verdict_messages.json: copies of the Android files)
+      - { path: Resources, optional: true }   # model files (ios/README.md, ADR 0037); absent until fetched
+    dependencies:
+      - { package: CaptureKit, product: CaptureKit }
+      - { package: CaptureKit, product: CaptureKitSegment }
+    settings:
+      base:
+        # Server URLs: empty = upload/results UI hidden (AppConfig). Override per build: xcodebuild CK_TUS_URL=https://... etc.
+        CK_TUS_URL: ""
+        CK_VERIFIER_URL: ""
+        CK_JOBS_URL: ""
     info:
       path: Sources/Info.plist
       properties:
         NSCameraUsageDescription: CaptureKit records camera frames to build a 3D room scan.
         NSMotionUsageDescription: CaptureKit records motion sensors to measure capture quality.
+        NSMicrophoneUsageDescription: CaptureKit listens for your voice commands while you scan (push to talk). Audio is not recorded or stored.
+        NSSpeechRecognitionUsageDescription: CaptureKit turns your push-to-talk voice commands into scan controls, on the phone.
+        CK_TUS_URL: $(CK_TUS_URL)
+        CK_VERIFIER_URL: $(CK_VERIFIER_URL)
+        CK_JOBS_URL: $(CK_JOBS_URL)
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
         UIRequiredDeviceCapabilities: [arkit]

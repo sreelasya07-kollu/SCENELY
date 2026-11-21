@@ -29,6 +29,7 @@ Architecture Decision Records (ADRs), one file per decision: NNNN-title.md.
 - [0024](0024-opening-detector-v1-parameters.md) OpeningDetector v1 parameters (sim-tuned hypotheses, revisit with real recordings)
 - [0025](0025-device-bundle-fixes-time-zero-pause-redaction.md) Device-bundle fixes: t_ns <= 0 reject, pause-aware POSE_GAP, recovered redaction log, NO_KEYFRAMES
 - [0026](0026-room-layout-model-overlay-v3.md) Room layout model (wall lines, blocked/missing spans), overlay v3, GuideParams gp2
+- 0027: number not used (no ADR was written under it)
 - [0028](0028-guide-output-channels-schema-1-3-0.md) Derived /guide/labels, /guide/shell, /guide/gaps channels, schema 1.3.0
 - [0029](0029-sim-arcore-plane-mode-furnished-rooms.md) Simulator "arcore" plane mode (fragments, re-ids, subsumption, jitter) and furnished4 / furnishedL rooms
 - [0030](0030-object-classes-detector-default-on.md) More object classes (append-only ids), detector on by default, objects on the mini-map, camera boxes and review
@@ -39,3 +40,5 @@ Architecture Decision Records (ADRs), one file per decision: NNNN-title.md.
 - [0035](0035-live-segmentation-and-object-memory.md) Live RF-DETR-Seg instance segmentation with per-scan object memory (Android green boxes)
 - [0036](0036-still-calibration-and-imu-default.md) Pre-scan stillness calibration (contract C1), IMU recorded by default on Android
 - [0037](0037-ios-parity-swift-ports.md) iOS parity with Android: Swift ports of the Kotlin app helpers (not moved into core), LiteRT-Swift in its own target
+- [0038](0038-scanned-object-boxes.md) Scanned vs not-yet-scanned object boxes (amber/green) and the "Object boxes unavailable" chip; display only, extends 0035
+- [0040](0040-android-packs-archive-at-finish.md) Android packs one zip at Finish, tus sends it as one upload (`path=bundle.zip`), the verifier takes a zip (issue #10 stage 2)

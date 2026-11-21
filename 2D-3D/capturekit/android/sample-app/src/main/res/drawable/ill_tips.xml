@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp"
+    android:height="160dp"
+    android:viewportWidth="160"
+    android:viewportHeight="160">
+    <path android:fillColor="@color/ck_accent_container" android:pathData="M80,8a72,72 0 1,0 0.01,0z" />
+    <path android:fillColor="@color/ck_accent" android:pathData="M80,50a14,14 0 1,0 0.01,0z" />
+    <path android:strokeColor="#FF9EF2E5" android:strokeWidth="4" android:strokeLineJoin="round" android:strokeLineCap="round" android:fillColor="#00000000" android:pathData="M80,28v8 M80,76v8 M52,56h8 M100,56h8 M60,36l6,6 M100,36l-6,6 M60,76l6,-6 M100,76l-6,-6" />
+    <path android:strokeColor="@color/ck_accent" android:strokeWidth="3" android:strokeLineJoin="round" android:strokeLineCap="round" android:fillColor="#00000000" android:pathData="M44,124C60,106 76,134 92,116S116,108 124,118" />
+</vector>

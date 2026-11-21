@@ -1,6 +1,6 @@
 # PROGRESS: roomscan-recon
 
-Room Scanner Part 3 (`spatial/`) + Part 4 (`recon/`). This machine: Intel Core Ultra 200V,
+Part 2 of SCENELY: `spatial/` stage + `recon/` stage. This machine: Intel Core Ultra 200V,
 15 GB RAM (~3 GB free in practice), Intel Arc iGPU (**no CUDA**), CPU-only runs.
 GPU/ARKitScenes work is listed under "Pending for the GPU test machine".
 
@@ -13,7 +13,7 @@ GPU/ARKitScenes work is listed under "Pending for the GPU test machine".
 | 4 | Fusion evaluation | synthetic Chamfer + Replica done; ETH3D official-tool score see Phase 8 |
 | 5 | Planes + room shell (box and L-shaped rooms) | done |
 | 6 | SpatialMap writer/reader, schemas, `spatial.cli run` | done |
-| 7 | Part 4 sparse hand-over to OpenMVS | done |
+| 7 | Part 2 recon stage sparse hand-over to OpenMVS | done |
 | 8 | OpenMVS dense + mesh + texture, ETH3D scoring, held-out PSNR | implemented; ETH3D targets see "Phase 8 evidence" |
 | 9 | Gaussian-splat worker | written, **never executed (needs CUDA)**; CPU parts tested |
 | 10 | Reconstruction packaging, manifest, `recon.cli run` | done; splat recorded as `skipped` without CUDA |

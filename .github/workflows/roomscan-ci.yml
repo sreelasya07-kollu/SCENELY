@@ -1,0 +1,46 @@
+name: roomscan-recon CI (Part 2)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "roomscan-recon/**"
+      - ".github/workflows/roomscan-ci.yml"
+  pull_request:
+    paths:
+      - "roomscan-recon/**"
+      - ".github/workflows/roomscan-ci.yml"
+
+concurrency:
+  group: roomscan-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: roomscan-recon
+
+jobs:
+  charter:
+    name: charter integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash scripts/verify-charter.sh
+
+  lint-and-light-tests:
+    name: ruff + light tests (CPU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+      - name: Install (CPU torch)
+        run: uv sync --extra cpu
+      - name: Lint
+        run: uv run ruff check
+      - name: Light tests
+        run: uv run pytest -m light -q

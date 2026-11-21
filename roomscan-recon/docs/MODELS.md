@@ -15,7 +15,7 @@ licence field. The exact weights revision used is recorded per run in
 
 | Tool | Licence (to verify before shipping) | How used |
 |---|---|---|
-| OpenMVS v2.4.0 (`room-openmvs:2.4.0`) | AGPL-3.0 (upstream licence; not independently verified here) | `InterfaceCOLMAP`, `DensifyPointCloud`, `ReconstructMesh`, `RefineMesh`, `TextureMesh` run as separate containers; no OpenMVS code is linked into this repo. Network-service use of AGPL code may trigger source-offer obligations: get legal review before offering Part 4 as a hosted API. |
+| OpenMVS v2.4.0 (`room-openmvs:2.4.0`) | AGPL-3.0 (upstream licence; not independently verified here) | `InterfaceCOLMAP`, `DensifyPointCloud`, `ReconstructMesh`, `RefineMesh`, `TextureMesh` run as separate containers; no OpenMVS code is linked into this repo. Network-service use of AGPL code may trigger source-offer obligations: get legal review before offering Part 2 recon stage as a hosted API. |
 | ETH3D multi-view-evaluation (`room-eth3d-eval`) | upstream licence not verified | scoring only (tests/benchmarks) |
 | COLMAP / pycolmap 4.2.1 | BSD-3-Clause | library |
 | Open3D 0.19.0 | MIT | library |

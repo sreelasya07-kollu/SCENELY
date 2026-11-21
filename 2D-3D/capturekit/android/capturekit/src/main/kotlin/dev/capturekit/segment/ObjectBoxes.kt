@@ -10,10 +10,16 @@ data class LiveObject(
     val trackId: Int, val label: String, val cocoId: Int, val score: Float,
     val boxImg: Box2?, val centreWorld: Vec3?, val seenCount: Int,
     val firstSeenNs: Long, val lastSeenNs: Long, val state: LiveState,
-)
+) {
+    /** Scanned (ADR 0038): located in 3D and seen at least [LiveObjectTracker.SCANNED_MIN_SIGHTINGS] times. Derived, so immutable. */
+    val scanned: Boolean get() = centreWorld != null && seenCount >= LiveObjectTracker.SCANNED_MIN_SIGHTINGS
+}
 
-/** One box to draw this frame, in camera-image pixels: [solid] = seen in the last result, else remembered (dashed, "seen" tag). */
-data class DrawBox(val trackId: Int, val text: String, val box: Box2, val solid: Boolean)
+/**
+ * One box to draw this frame, in camera-image pixels: [solid] = seen in the last result, else remembered (dashed, "seen" tag).
+ * [scanned] = see [LiveObject.scanned] (drawn green with a check, else amber).
+ */
+data class DrawBox(val trackId: Int, val text: String, val box: Box2, val solid: Boolean, val scanned: Boolean = false)
 
 /**
  * Live objects of one scan (ADR 0035): turns each segmentation result into tracks and draws them every frame.
@@ -85,7 +91,7 @@ class LiveObjectTracker(private val memory: TrackMemory = TrackMemory()) {
                 if (uv == null || !cam.inImage(uv[0], uv[1], 0f)) null
                 else coreBoxFor(o, c, cam, core, floorY) ?: scaled(cam, c, uv, ex)
             } else if (nowMs - ex.appliedMs <= NO_CENTRE_MS && o.boxImg != null) o.boxImg else null
-            if (box != null) out.add(DrawBox(o.trackId, text, box, solid))
+            if (box != null) out.add(DrawBox(o.trackId, text, box, solid, o.scanned))
         }
         return out
     }
@@ -118,5 +124,7 @@ class LiveObjectTracker(private val memory: TrackMemory = TrackMemory()) {
         const val FRESH_MS = 1500L
         /** Core object box and track match when their centres are this close (metres). */
         const val CORE_MATCH_M = 0.6f
+        /** An object counts as scanned once it was seen this many times and has a 3D centre (ADR 0038). */
+        const val SCANNED_MIN_SIGHTINGS = 3
     }
 }

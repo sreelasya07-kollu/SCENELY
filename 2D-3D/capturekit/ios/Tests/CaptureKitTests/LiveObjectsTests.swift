@@ -1,7 +1,7 @@
 import XCTest
 @testable import CaptureKit
 
-/// Ported 1:1 from Kotlin ObjectBoxesTest (contract C2 projection, ADR 0035).
+/// Ported 1:1 from Kotlin ObjectBoxesTest (contract C2 projection, ADR 0035; scanned flag, ADR 0038).
 final class LiveObjectsTests: XCTestCase {
     /// Camera 1.5 m up at the origin looking down world -Z, 640 x 480.
     private let cam = CameraSnapshot(qw: 1, qx: 0, qy: 0, qz: 0, tx: 0, ty: 1.5, tz: 0, fx: 500, fy: 500, cx: 320, cy: 240, w: 640, h: 480)
@@ -35,7 +35,38 @@ final class LiveObjectsTests: XCTestCase {
     }
     private let none: (Vec3, Vec3) -> Vec3? = { _, _ in nil }
 
-    func testASegmentedObjectGetsASolidGreenBoxWithLabelAndId() {
+    func testAnObjectIsScannedAfterEnoughSightingsWithA3dPosition() {
+        let t = LiveObjectTracker()
+        let n = LiveObjectTracker.scannedMinSightings
+        for k in 1..<n {
+            let now = Int64(1000 + k * 200)
+            t.apply(chair(chairAt, t: Int64(k)), nowMs: now, hit: hitAt(chairAt))
+            XCTAssertFalse(t.objects(nowMs: now)[0].scanned)
+            XCTAssertFalse(t.drawBoxes(cam, nowMs: now)[0].scanned)
+        }
+        let now = Int64(1000 + n * 200)
+        t.apply(chair(chairAt, t: Int64(n)), nowMs: now, hit: hitAt(chairAt))
+        XCTAssertEqual(n, t.objects(nowMs: now)[0].seenCount)
+        XCTAssertTrue(t.objects(nowMs: now)[0].scanned)
+        XCTAssertTrue(t.drawBoxes(cam, nowMs: now)[0].scanned)
+        // Still scanned once it is only remembered.
+        let remembered = t.drawBoxes(cam, nowMs: 60_000)[0]   // the centre is still in view, so a remembered (dashed) box is drawn
+        XCTAssertFalse(remembered.solid); XCTAssertTrue(remembered.scanned)
+        XCTAssertTrue(t.objects(nowMs: 60_000)[0].scanned)
+    }
+
+    func testAnObjectWithoutA3dPositionIsNeverScanned() {
+        let t = LiveObjectTracker()
+        for k in 1...(LiveObjectTracker.scannedMinSightings + 2) {
+            t.apply(chair(nil, t: Int64(k)), nowMs: Int64(1000 + k * 100), hit: none)
+        }
+        let o = t.objects(nowMs: 1600)[0]
+        XCTAssertNil(o.centreWorld); XCTAssertGreaterThanOrEqual(o.seenCount, LiveObjectTracker.scannedMinSightings)
+        XCTAssertFalse(o.scanned)
+        XCTAssertFalse(t.drawBoxes(cam, nowMs: 1600)[0].scanned)
+    }
+
+    func testASegmentedObjectGetsASolidBoxWithLabelAndId() {
         let t = LiveObjectTracker()
         t.apply(chair(chairAt), nowMs: 1000, hit: hitAt(chairAt))
         let boxes = t.drawBoxes(cam, nowMs: 1100)

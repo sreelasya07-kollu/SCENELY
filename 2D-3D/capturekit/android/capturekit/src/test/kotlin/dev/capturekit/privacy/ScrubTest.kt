@@ -49,6 +49,14 @@ class ScrubTest {
         assertEquals("took 12/30 frames, 7 / 9", Scrub.scrub("took 12/30 frames, 7 / 9"))
     }
 
+    @Test fun mixedTelemetryMessageLeaksNothingAndIsIdempotent() {
+        val raw = "upload scan_20260101-120000_ab12 to https://host.example/files/9 failed: " +
+            "java.io.FileNotFoundException: /storage/emulated/0/Android/data/dev.capturekit/files/scan_2026/keyframes/kf_0001.jpg"
+        val out = Scrub.scrub(raw)
+        assertEquals("upload <bundle> to <url> failed: java.io.FileNotFoundException: <path>", out)
+        assertEquals(out, Scrub.scrub(out))
+    }
+
     @Test fun plainTextIsUntouched() {
         val s = "tracking lost after 3 retries (ratio 1/2, ok)"
         assertEquals(s, Scrub.scrub(s))

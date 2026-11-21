@@ -16,7 +16,7 @@
 **Approved by:** <owner name>
 
 ## 1. Project name
-roomscan-recon: Room Scanner Part 3 (spatial understanding, `spatial/`) and Part 4
+roomscan-recon: Part 2 of SCENELY, spatial stage (spatial understanding, `spatial/`) and recon stage
 (3D reconstruction, `recon/`). [pyproject.toml; HANDOFF.md title and intro]
 
 ## 2. One-line idea
@@ -61,9 +61,9 @@ recovering true scale, and producing a clean room-scale result without manual tu
    docs/specs/C-SplatForge.md §5 P5]
 5. Planes and room shell: floor, ceiling, walls, floor polygon, ceiling height.
    [HANDOFF.md §5 P5]
-6. SpatialMap on-disk format, writer, schemas and `spatial` CLI (Part 3 output, Part 4
+6. SpatialMap on-disk format, writer, schemas and `spatial` CLI (Part 2 spatial stage output, Part 2 recon stage
    input). [HANDOFF.md §4.2, §5 P6]
-7. Part 4 sparse hand-over, OpenMVS dense cloud, mesh and texture, GLB export.
+7. Part 2 recon stage sparse hand-over, OpenMVS dense cloud, mesh and texture, GLB export.
    [HANDOFF.md §5 P7-P8; docs/specs/C-SplatForge.md §5 P5, P7]
 8. Gaussian-splat training and standard 3DGS PLY export as a separate output.
    [HANDOFF.md §2 rule 2, §5 P9; docs/specs/C-SplatForge.md §5 P6]
@@ -103,7 +103,7 @@ recovering true scale, and producing a clean room-scale result without manual tu
 ## 9. Success criteria / definition of "done" for the whole project
 - [ ] Every HANDOFF.md §5 acceptance line (P1-P10) has a measured number and a phase report.
   [docs/PLAN.md §5]
-- [ ] The Part 3 and Part 4 run commands run end-to-end on CPU for P1-P8 and reproduce
+- [ ] The Part 2 (spatial + recon stages) run commands run end-to-end on CPU for P1-P8 and reproduce
   hashes. [docs/PLAN.md §5]
 - [ ] GPU-only items are marked and skipped with the reason printed. [docs/PLAN.md §5]
 - [ ] Everything committed, datasets and runs gitignored, licences inventoried in

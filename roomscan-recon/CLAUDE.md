@@ -1,4 +1,4 @@
-# CLAUDE.md: roomscan-recon (Room Scanner Part 3 `spatial/` + Part 4 `recon/`)
+# CLAUDE.md: roomscan-recon (Part 2 of SCENELY: `spatial/` stage + `recon/` stage)
 Files in `docs/` are the source of truth; each fact has one owner (`docs/README.md`). Link, never copy.
 
 ## Rules

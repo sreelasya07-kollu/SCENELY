@@ -1,8 +1,24 @@
 <resources>
-    <!-- Full-screen, no action bar: the camera preview runs edge to edge. -->
-    <style name="AppTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
-        <item name="android:windowBackground">#FF0A0A0B</item>
+    <!-- Dark Material platform theme (no dependency): platform widgets (Switch, ProgressBar, dialogs) inherit the accent. -->
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ck_bg</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:colorPrimary">@color/ck_surface1</item>
+        <item name="android:colorPrimaryDark">@color/ck_bg</item>
+        <item name="android:colorAccent">@color/ck_accent</item>
+        <item name="android:colorControlActivated">@color/ck_accent</item>
+        <item name="android:colorControlHighlight">#1FFFFFFF</item>
+        <item name="android:textColorPrimary">@color/ck_on_surface</item>
+        <item name="android:textColorSecondary">@color/ck_on_surface_variant</item>
+        <item name="android:alertDialogTheme">@style/AppDialog</item>
+    </style>
+
+    <style name="AppDialog" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorBackground">@color/ck_surface2</item>
+        <item name="android:colorAccent">@color/ck_accent</item>
+        <item name="android:textColorPrimary">@color/ck_on_surface</item>
+        <item name="android:textColorSecondary">@color/ck_on_surface_variant</item>
+        <item name="android:windowBackground">@color/ck_surface2</item>
     </style>
 </resources>

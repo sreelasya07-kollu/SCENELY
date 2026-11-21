@@ -1,5 +1,5 @@
 # PROGRESS
-Program = 2 parts (docs/program-spec/README.md). This whole repo = Part 1 only (Part 2 = repo roomscan-recon). Phases 0–12. GitHub RealKarthiksai/2D-3D, branch `main`; issues #1-#10 are all closed (audit table: docs/STATUS.md top).
+Program = 2 parts (docs/program-spec/README.md). This whole repo = Part 1 only (Part 2 = `../roomscan-recon`, same monorepo). Phases 0–12. GitHub sreelasya07-kollu/SCENELY (monorepo), branch `main`; issues #1-#10 are all closed (audit table: docs/STATUS.md top).
 ## Done (software verified on synthetic data; device acceptance mostly pending: docs/STATUS.md §0 + §3)
 - Phases 0–8 done; 9–11 mostly (Android only); iOS never compiled (no Mac). Per-phase detail: docs/STATUS.md §1. Everything is committed; `git log` is authoritative (a history rewrite removed some old hashes).
 - Since 2026-11-17 in `main`: real-room-fix T0/T1 (ADR 0025, 0026 layout, 0028 guide channels = schema 1.3.0, 0029 sim), detections 1.1.0, consent/privacy 1.2.0, object classes (#2, ADR 0030), tracking recalibration (#1, ADR 0031), UI redesign (#3), feature audit (#6: `FeatureFlags`, device-verified features only, ADR 0032), `ckit recon-bench` (#7), live segmentation (#8, flag OFF), keyframe dedup (#9, ADR 0033).

@@ -48,7 +48,7 @@
 - **What:** structure-from-motion and bundle adjustment, Python bindings.
 - **Why:** mature SfM (HANDOFF.md §2 rule 3); CPU wheel is enough for SIFT + BA.
 - **How:** `spatial/sfm/refine.py` (pose refinement, SfM fallback), `recon/sparse.py`
-  (Part 4 sparse hand-over), `recon/evaluate.py`.
+  (Part 2 recon stage sparse hand-over), `recon/evaluate.py`.
 - **Alternatives:** CUDA build / PatchMatch stereo (HANDOFF.md §3); global mapper is
   experimental (PROGRESS.md decisions log). GLOMAP / VGGT: C-SplatForge §5, not integrated.
 - **ADR:** none (pre-ADR).

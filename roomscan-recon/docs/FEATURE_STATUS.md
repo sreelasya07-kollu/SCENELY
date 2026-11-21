@@ -1,6 +1,6 @@
 # Feature status: the 14 stages, one row per feature
 
-One table for the whole program (Part 1 phone capture + Parts 3 and 4 in this repo). Audited against the code at
+One table for the whole program (Part 1 phone capture + Part 2 backend, spatial and recon stages, in this repo). Audited against the code at
 base commit cde7a62 plus the uncommitted `2D-3D` working tree of 2026-11-22. Where a row says "unknown" the
 code and docs give no evidence either way. The stage list is the owner's own 14 stages (coordinator message
 2026-11-22), not a project document. Ownership of this file: T-029 in [04-TASKS.md](04-TASKS.md).
@@ -57,7 +57,7 @@ passed on a phone.
 | 7.1 | Resumable tus upload | Android-only | `android/capturekit/.../upload/TusUploader.kt` (one resumable upload per file, retry with backoff), `UploadWorker.kt`; iOS `ios/Sources/CaptureKit/Upload/` source only | Never run against a server from a phone (field flavour only; H16, H17); iOS uncompiled |
 | 7.2 | Server verification (hashes, `t` monotonicity, channel completeness, pose continuity) | partial | Dev server only: `capturekit/dev-server/verifier/bundle_verify.py` (size + sha256, then `ckit validate semantic`: `NON_MONOTONIC_TIME`, `MISSING_CHANNEL`, `POSE_GAP`, `TIME_ZERO`), docker failure matrix 8/8 (STATUS.md phase 7). Ingest in `roomscan-recon`: `formats/scanbundle.py` reads **Scan Bundle v0.1 only** ([SCAN_BUNDLE.md](SCAN_BUNDLE.md)) | The backend cannot read v1.4.0 MCAP bundles; the dev-server verifier is not the production backend (job API: brief `backend-app-connection`, not approved); phone-side failure matrix not run |
 
-## Stages 8 to 14: backend (Parts 3 and 4, this repo)
+## Stages 8 to 14: backend (Part 2: spatial and recon stages, this repo)
 
 All backend numbers were measured on CPU; nothing here ever ran on an NVIDIA GPU
 ([heavy-compute/INVENTORY.md](heavy-compute/INVENTORY.md), runbook [GPU_RUNBOOK.md](heavy-compute/GPU_RUNBOOK.md)).

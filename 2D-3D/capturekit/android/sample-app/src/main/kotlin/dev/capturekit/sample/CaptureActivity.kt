@@ -162,7 +162,7 @@ class CaptureActivity : Activity(), SessionManager.Listener {
             }
         }
         hud.onVoiceToggle = { speech.enabled = !speech.enabled; hud.setVoice(speech.enabled) }
-        if (features.segmentation) hud.onBoxesToggle = { objectView.showBoxes = !objectView.showBoxes; hud.setBoxes(objectView.showBoxes) }
+        if (features.segmentation) hud.onBoxesToggle = { if (segmentation != null) { objectView.showBoxes = !objectView.showBoxes; hud.setBoxes(objectView.showBoxes) } }
         else objectView.visibility = android.view.View.GONE
         research = ResearchLog(this)
         if (features.voiceCommands) {
@@ -183,6 +183,7 @@ class CaptureActivity : Activity(), SessionManager.Listener {
         hud.button.isEnabled = false
         hud.setDetail("Checking for interrupted sessions...")
         Thread {
+            getExternalFilesDir("bundles")?.let { dev.capturekit.upload.BundleArchive.cleanTmp(it) }   // a zip pack the process was killed in (ADR 0040)
             val recovered = SessionManager.recoverInterrupted(this)
             runOnUiThread {
                 recovering = false
@@ -241,7 +242,9 @@ class CaptureActivity : Activity(), SessionManager.Listener {
             onDisabled = { runOnUiThread { if (segmentation != null && segmentation === seg) segmentationFailed() } })
         segmentation = seg
         segFeed = seg?.let { SegmentationFeed(it) }
-        hud.setBoxes(if (seg != null) objectView.showBoxes else null)
+        val boxesWanted = features.segmentation && !research.unguided
+        if (boxesWanted && seg == null) Log.w(TAG, "object boxes unavailable: segmentation did not start (model files missing or GPU cannot run them)")
+        hud.setBoxes(if (seg != null) objectView.showBoxes else null, unavailable = boxesWanted && seg == null)
         ar.recording = true
         adapter = ARAdapter(s, 0L) { ar.session }
         stopCalibration()
@@ -347,7 +350,7 @@ class CaptureActivity : Activity(), SessionManager.Listener {
             runOnUiThread {
                 session = null
                 startActivity(Intent(this, ReviewActivity::class.java)
-                    .putExtra(ReviewActivity.EXTRA_DIR, s.dir.absolutePath)
+                    .putExtra(ReviewActivity.EXTRA_DIR, (s.archive ?: s.dir).absolutePath)   // the zip, or the folder if packing failed (ADR 0040)
                     .putExtra(ReviewActivity.EXTRA_STATUS, st)
                     .putExtra(ReviewActivity.EXTRA_ELAPSED_MS, elapsed)
                     .putExtra(ReviewActivity.EXTRA_KEYFRAMES, kf)
@@ -375,6 +378,7 @@ class CaptureActivity : Activity(), SessionManager.Listener {
     private fun segmentationFailed() {
         Log.w(TAG, "segmentation disabled itself: live object boxes off")
         closeSegmentation()
+        if (features.segmentation && !research.unguided) hud.setBoxes(null, unavailable = true)
     }
 
     private fun elapsedMs(): Long {

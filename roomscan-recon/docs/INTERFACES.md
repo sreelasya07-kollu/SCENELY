@@ -1,4 +1,4 @@
-# Interfaces: roomscan-recon (Part 3 `spatial/`, Part 4 `recon/`)
+# Interfaces: roomscan-recon (Part 2: `spatial/` stage, `recon/` stage)
 
 Single source of truth for on-disk formats between phases. Pydantic models live in
 `formats/`; every JSON file below validates against them. Version bumps follow semver
@@ -80,7 +80,7 @@ runs/<run_id>/phase3/
   depth_valid/<frame>.png       uint8 {0,255}, mask after all enabled filters
   depth_alignment.json          formats.DepthAlignment
   fusion/cloud.ply              fused cloud: xyz (m, world), rgb, normals
-  fusion/tsdf_mesh.ply          TSDF mesh, debugging/eval only (NOT a Part 4 output)
+  fusion/tsdf_mesh.ply          TSDF mesh, debugging/eval only (NOT a Part 2 recon stage output)
   meta.json                     formats.StageMeta
 ```
 
@@ -132,7 +132,7 @@ wall lines (`floor_polygon_source` stays `footprint_contour`); fallback is the f
 peak_vram_mb|null, versions{python, numpy, open3d, pycolmap, torch, transformers, git_commit},
 params{…}, inputs{path: sha256}, outputs{path: sha256}, metrics{…}, notes[]`
 
-## 6. Phase 6: SpatialMap (Part 3 output, Part 4 input)
+## 6. Phase 6: SpatialMap (Part 2 spatial stage output, Part 2 recon stage input)
 
 `python -m spatial.cli run --dataset {replica,tum,eth3d} --src <scene> --out <run> [--max-frames N] [--stride K] [--downscale D] [--prior gt|gt_noisy|none] [--depth-scale] [--phase3-downscale 2]`
 runs P1 → P2 → P3 → P5 → P6 and writes `<run>/spatial_map/`. Code: `spatial/pipeline.py`,
@@ -152,14 +152,14 @@ spatial_map/
   depth/<id>.png     uint16 mm metric depth of the fused frames; depth/depth_alignment.json
   depth_valid/<id>.png  final validity mask (255)
   fused_cloud.ply    fused point cloud (xyz, rgb, normals), world frame
-  tsdf_mesh.ply      TSDF mesh (debug / planes only: NOT a Part 4 output)
+  tsdf_mesh.ply      TSDF mesh (debug / planes only: NOT a Part 2 recon stage output)
   planes.json room.json   §4
   quality.json       SpatialQuality: registration, scale source/confidence, depth validity,
                      wall/floor deviation, floor tilt, and `warnings[]` (rule-based, see
                      spatial/spatial_map.py quality_report)
 ```
 `load_spatial_map(path)` re-hashes every listed file and reports missing, modified and
-unlisted files (`verify()`), so Part 4 never consumes a corrupted or half-written map.
+unlisted files (`verify()`), so Part 2 recon stage never consumes a corrupted or half-written map.
 Version policy: 0.x; additive optional fields bump the minor version.
 
 Depth sources (Phase 3, `--depth-source`): `sensor`; `mvs` (OpenMVS depth maps, confidence ≥ 0.5;
@@ -167,7 +167,7 @@ default when no sensor); `hybrid` (MVS, holes filled with scale-aligned mono dep
 better than `mvs`, kept as an option); `mono` (Depth-Anything-V2-Small aligned to sparse points:
 fallback only). `refine --depth-scale` corrects the metric scale from sensor depth.
 
-## 7. Phase 10: Reconstruction (Part 4 output)
+## 7. Phase 10: Reconstruction (Part 2 recon stage output)
 
 `python -m recon.cli run --spatial-map <run>/spatial_map --out <run>/reconstruction [--resolution-level 1] [--splat auto|yes|no] [--heldout-every 8] [--refine]`
 Code: `recon/` (sparse.py, dense.py, openmvs.py, render.py, evaluate.py, splat/, package.py);
@@ -178,7 +178,7 @@ reconstruction/
   manifest.json   ReconstructionManifest: format "room.reconstruction", spatial_map{path,
                   manifest_sha256, quality_warnings}, outputs{sparse|dense|mesh|splat: OutputEntry},
                   files{path: sha256}, timings_s, peak_ram_mb, params, versions
-  sparse/         the model Part 3 refined, unchanged
+  sparse/         the model Part 2 spatial stage refined, unchanged
   dense/          OpenMVS scene_dense.mvs/.ply
   mesh/           mesh.ply, [mesh_refined.ply], textured/mesh.obj|mtl|textures, mesh.glb
   splat/          point_cloud.ply (standard 3DGS layout), cfg.json, train_log.jsonl, ckpt_last.pt
@@ -216,6 +216,6 @@ All three read only `formats/` (enforced by `tests/test_module_boundaries.py`).
 
 ## 9. Module boundaries
 
-- `spatial/` (Part 3) and `recon/` (Part 4) never import each other.
+- `spatial/` (Part 2 spatial stage) and `recon/` (Part 2 recon stage) never import each other.
 - Both may import `formats/`. Only tests/benchmarks import `eval/`; pipeline code never does.
 - `eval/` may read `workspace/gt/`; nothing else may.

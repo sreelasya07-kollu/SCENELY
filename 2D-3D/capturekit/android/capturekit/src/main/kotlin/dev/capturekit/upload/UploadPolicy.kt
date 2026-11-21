@@ -40,7 +40,7 @@ object UploadPolicy {
         Regex("\"verdict\"\\s*:\\s*\"(PASS|WARN|FAIL)\"").find(manifestJson)?.groupValues?.get(1)
 
     /** Beside the bundle (not inside it, so the bundle's file list stays exactly what the core wrote). */
-    fun verifiedMarker(bundle: File): File = File(bundle.absoluteFile.parentFile, bundle.name + ".upload_verified")
+    fun verifiedMarker(bundle: File): File = BundleArchive.dirOf(bundle).let { File(it.absoluteFile.parentFile, it.name + ".upload_verified") }   // keyed by the folder name, also for scan_x.zip
 
     fun isMarker(name: String) = name.endsWith(".upload_verified")
 

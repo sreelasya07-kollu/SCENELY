@@ -5,8 +5,8 @@
 > [SCAN_BUNDLE.md](SCAN_BUNDLE.md). Phase status is owned by [PROGRESS.md](../PROGRESS.md).
 
 ## Overview
-Part 3 (`spatial/`) turns a capture into a **SpatialMap** folder: refined metric,
-gravity-aligned poses, depth, a fused cloud, planes and the room shell. Part 4 (`recon/`)
+Part 2 spatial stage (`spatial/`) turns a capture into a **SpatialMap** folder: refined metric,
+gravity-aligned poses, depth, a fused cloud, planes and the room shell. Part 2 recon stage (`recon/`)
 reads only that folder and writes a **Reconstruction** folder: sparse model, OpenMVS dense
 cloud, mesh, textured mesh and GLB, and a Gaussian splat as a separate output (HANDOFF.md §2
 rules 1-2).
@@ -42,9 +42,9 @@ flowchart LR
 ## Folder structure of the codebase
 ```
 formats/      pydantic models + validators for every on-disk format (shared by all)
-spatial/      Part 3: io/ (adapters, ingest, keyframes, scanbundle), sfm/, depth/, fusion/,
+spatial/      Part 2 spatial stage: io/ (adapters, ingest, keyframes, scanbundle), sfm/, depth/, fusion/,
               room/, spatial_map.py, pipeline.py, cli.py
-recon/        Part 4: sparse.py, openmvs.py, dense.py, splat/, render.py, evaluate.py,
+recon/        Part 2 recon stage: sparse.py, openmvs.py, dense.py, splat/, render.py, evaluate.py,
               package.py, cli.py
 router/       requested outputs + capture tier -> stage plan (pure logic)
 qa/           QA gates -> Job Report with rescan regions; thresholds in qa/thresholds.py
@@ -64,8 +64,8 @@ tests/        pytest suite, resource markers defined in pyproject.toml
 | Module | Responsibility | Depends on | CLI |
 |---|---|---|---|
 | `formats/` | on-disk models, validators | none of the project packages | none |
-| `spatial/` | Part 3: capture -> SpatialMap | `formats/` | `python -m spatial.cli {validate-bundle,ingest,refine,phase3,room,run}` |
-| `recon/` | Part 4: SpatialMap -> Reconstruction | `formats/` | `python -m recon.cli run` |
+| `spatial/` | Part 2 spatial stage: capture -> SpatialMap | `formats/` | `python -m spatial.cli {validate-bundle,ingest,refine,phase3,room,run}` |
+| `recon/` | Part 2 recon stage: SpatialMap -> Reconstruction | `formats/` | `python -m recon.cli run` |
 | `router/` | stage plan, refusals, budget flag | no project package (pure logic) | `python -m router.cli plan` |
 | `qa/` | gates and Job Report | `formats/` | `python -m qa.cli report` |
 | `export/` | exports from a SpatialMap | `formats/` | `python -m export.cli all` |
@@ -94,7 +94,7 @@ INTERFACES.md §9 and the test in the same commit.
 | Coordinate conventions | [INTERFACES.md §0](INTERFACES.md) |
 
 ## Key flows
-### Part 3 end to end
+### Part 2 spatial stage end to end
 1. Ingest a dataset or Scan Bundle into a workspace (undistorted images, priors,
    optional depth).
 2. Refine poses with SfM + priors; output is metric and gravity-aligned.
@@ -102,7 +102,7 @@ INTERFACES.md §9 and the test in the same commit.
 4. Extract planes and the room shell.
 5. Assemble and hash the SpatialMap. `python -m spatial.cli run` chains 1-5.
 
-### Part 4 end to end
+### Part 2 recon stage end to end
 1. Load the SpatialMap through `formats/` only.
 2. Sparse hand-over to OpenMVS and the splat initialiser.
 3. OpenMVS dense -> mesh -> texture -> GLB (CPU, docker); splat training (CUDA only,

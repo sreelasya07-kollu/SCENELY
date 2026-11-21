@@ -22,7 +22,7 @@ import dev.capturekit.segment.SegmentationFeed
 import dev.capturekit.segment.Vec3
 
 /**
- * Live green object boxes over the camera feed (ADR 0035): label + #id, solid when seen in the last segmentation result,
+ * Live object boxes (amber while scanning, green with a check once scanned, ADR 0038) over the camera feed (ADR 0035): label + #id, solid when seen in the last segmentation result,
  * dashed with a "seen" tag when only remembered. Each box follows the camera at frame rate: it is the track's 3D centre
  * projected into the CURRENT camera ([LiveObjectTracker]), mapped image -> view with Frame.transformCoordinates2d so crop and
  * rotation match the background renderer. Must fill the same parent as the AR GLSurfaceView. Display-only, never recorded.
@@ -33,7 +33,7 @@ import dev.capturekit.segment.Vec3
 class ObjectBoxOverlayView(ctx: Context) : View(ctx) {
     private val d = ctx.resources.displayMetrics.density
     private class Mapped(val items: List<Item>)
-    private class Item(val text: String, val rect: RectF, val solid: Boolean)
+    private class Item(val text: String, val rect: RectF, val solid: Boolean, val scanned: Boolean)
 
     private val tracker = LiveObjectTracker()               // GL thread only
     @Volatile private var pending: SegResult? = null
@@ -108,7 +108,7 @@ class ObjectBoxOverlayView(ctx: Context) : View(ctx) {
             frame.transformCoordinates2d(Coordinates2d.IMAGE_PIXELS, corners, Coordinates2d.VIEW, view)
             var l = Float.MAX_VALUE; var t = Float.MAX_VALUE; var rr = -Float.MAX_VALUE; var bb = -Float.MAX_VALUE
             for (i in 0 until 4) { l = minOf(l, view[2 * i]); rr = maxOf(rr, view[2 * i]); t = minOf(t, view[2 * i + 1]); bb = maxOf(bb, view[2 * i + 1]) }
-            out.add(Item(b.text, RectF(l, t, rr, bb), b.solid))
+            out.add(Item(b.text, RectF(l, t, rr, bb), b.solid, b.scanned))
         }
         return out
     }
@@ -126,22 +126,26 @@ class ObjectBoxOverlayView(ctx: Context) : View(ctx) {
         val fm = tagText.fontMetrics
         val tagH = fm.descent - fm.ascent + pad
         for (it in m.items) {
+            val colour = if (it.scanned) GREEN else AMBER   // amber while scanning, green once scanned
+            val text = if (it.scanned) "✓ ${it.text}" else "${it.text} …"
+            stroke.color = colour; tagBg.color = colour
             stroke.pathEffect = if (it.solid) null else dash
             stroke.alpha = if (it.solid) 255 else 200
             c.drawRect(it.rect, stroke)
-            val tw = tagText.measureText(it.text) + 2 * pad
+            val tw = tagText.measureText(text) + 2 * pad
             val x = it.rect.left.coerceIn(0f, maxOf(0f, width - tw))
             val y = (it.rect.top - tagH).coerceAtLeast(0f)
             tagBg.alpha = if (it.solid) 255 else 200
             r.set(x, y, x + tw, y + tagH)
             c.drawRoundRect(r, 4f * d, 4f * d, tagBg)
-            c.drawText(it.text, x + pad, y + pad / 2 - fm.ascent, tagText)
+            c.drawText(text, x + pad, y + pad / 2 - fm.ascent, tagText)
         }
     }
 
     private companion object {
         const val TAG = "CKObjectBoxes"
         const val GREEN = 0xFF00E676.toInt()
+        const val AMBER = 0xFFFFB300.toInt()
         const val MAX_BOXES = 24
     }
 }

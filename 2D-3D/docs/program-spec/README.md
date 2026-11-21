@@ -1,6 +1,6 @@
-# Room Scanner Program: two parts
+# SCENELY: two parts
 
-**This repository (2D-3D) is Part 1 only.** Part 2 is built in a separate repository, `roomscan-recon`.
+**This repository (2D-3D) is Part 1 only.** Part 2 is built in the sibling directory [`roomscan-recon`](../../../roomscan-recon/README.md) of the same monorepo (SCENELY).
 
 The program has **two parts**. The earlier split into nine projects (A–I) is superseded; those documents are kept
 only as source material in `legacy-nine-projects/` (do not plan from them).
@@ -8,7 +8,7 @@ only as source material in `legacy-nine-projects/` (do not plan from them).
 | Part | What it is | Spec | Code |
 |---|---|---|---|
 | **Part 1 — Intelligent Room Capture (Mobile App)** | Native iOS and Android applications with an advanced AI that understands the room like a human surveyor. It identifies walls, furniture, surfaces, obstacles and missing areas while the user scans. It continuously evaluates capture quality and guides the user with specific instructions, asking them to revisit areas whenever more information is needed. It produces a complete, validated Scan Bundle. | [part1-room-capture.md](part1-room-capture.md) | this repository: `capturekit/` (phases in `docs/phases/`) |
-| **Part 2 — 3D Processing & Reconstruction (Backend)** | A processing system that receives the Scan Bundle and converts it into 3D representations according to the user's requirements. It handles geometry reconstruction, depth estimation, point clouds, meshes, Gaussian Splatting and semantic room modelling, producing the required final 3D outputs. | [part2-reconstruction.md](part2-reconstruction.md) (contract reference) | separate repository `roomscan-recon` |
+| **Part 2 — 3D Processing & Reconstruction (Backend)** | A processing system that receives the Scan Bundle and converts it into 3D representations according to the user's requirements. It handles geometry reconstruction, depth estimation, point clouds, meshes, Gaussian Splatting and semantic room modelling, producing the required final 3D outputs. | [part2-reconstruction.md](part2-reconstruction.md) (contract reference) | `roomscan-recon/` (same monorepo) |
 
 **The contract between them is the Scan Bundle** (`capturekit/spec/scanbundle/`) plus the frozen
 [conventions.md](conventions.md). Part 2 reads Part 1 output only through that schema. The only data flowing back is

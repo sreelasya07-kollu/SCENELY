@@ -9,6 +9,12 @@ so a missed hook or a restart cannot leave a bundle stuck:
   CORRUPT     a listed file is complete but its size/sha256 differs from the manifest, or an upload's own
               declared sha256 differs from its bytes. Takes priority over INCOMPLETE.
   COMPLETE    manifest arrived and every listed file matches sha256 and size
+
+A bundle can also arrive as ONE upload with path ``bundle.zip`` (ADR 0040, the Android app after Finish).
+When the latest complete ``bundle.zip`` is newer than any manifest upload it is checked as a whole: its own
+sha256 against the uploader's value, then ckit's ``verify_archive`` (every entry against the manifest inside).
+COMPLETE lists the zip's entries as received; CORRUPT names ``bundle.zip``; a zip that has not fully arrived is
+PENDING. ``open_listed`` then serves the entries out of the zip, so GET /bundles/<id>/files/<path> is unchanged.
 """
 
 from __future__ import annotations
@@ -16,15 +22,21 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import shutil
 import tempfile
 import threading
 import time
 import urllib.request
+import weakref
+import zipfile
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Callable, Iterator, Protocol
 
 MANIFEST = "manifest.json"
+ARCHIVE = "bundle.zip"  # tus metadata `path` of a whole-bundle zip upload
 MAX_ISSUES = 50  # cap on issues reported per bundle in the status JSON
 log = logging.getLogger("verifier")
 
@@ -111,12 +123,46 @@ class Status:
         }  # fmt: skip
 
 
+class _ZipEntry:
+    """One entry of a local zip as a readable stream (what open_listed returns); close() releases the zip too."""
+
+    def __init__(self, path: Path, name: str) -> None:
+        self._zf = zipfile.ZipFile(path)
+        try:
+            self.size = self._zf.getinfo(name).file_size
+            self._fh = self._zf.open(name)
+        except BaseException:
+            self._zf.close()
+            raise
+
+    def read(self, n: int = -1) -> bytes:
+        return self._fh.read(n)
+
+    def close(self) -> None:
+        self._fh.close()
+        self._zf.close()
+
+    def __enter__(self) -> _ZipEntry:
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
+
 class Verifier:
     LISTING_TTL_S = 10.0  # open_listed re-lists storage at most this often per bundle
+    ZIP_COPIES_KEPT = 2  # local copies of uploaded zips kept for serving entries (the oldest is deleted)
 
     def __init__(self, store: Store, validator: Validator | None = None) -> None:
         self.store = store
         self.validator = validator
+        # zipfile needs a seekable file and S3 bodies are not: an uploaded zip is copied to a temp dir once.
+        # (key, size, mtime) -> (local path, sha256 of the zip). Removed with the Verifier (weakref.finalize).
+        self._zip_copies: OrderedDict[tuple[str, int, float], tuple[Path, str]] = OrderedDict()
+        self._zip_dir: str | None = None
+        self._zlock = threading.Lock()
+        # zip sha256 -> (problems, entry names, the manifest's "validation" block); verify_archive reads every byte
+        self._archive_cache: dict[str, tuple[list[str], list[str], dict | None]] = {}
         self._hash_cache: dict[tuple[str, int, float], str] = {}
         # (bundle_id, manifest sha256) -> completed result. Crashes are NOT cached, so a retry re-validates.
         self._validation_cache: dict[tuple[str, str], dict] = {}
@@ -181,6 +227,11 @@ class Verifier:
         try:
             with tempfile.TemporaryDirectory(prefix="verify-") as tmp:
                 root = Path(tmp)
+                if man.meta.get("path") == ARCHIVE:  # an untrusted zip: extract_archive refuses unsafe names and bombs
+                    from ckit.bundle.archive import extract_archive
+
+                    local, _ = self._local_zip(man)
+                    return self.validator(extract_archive(local, root / "bundle"))  # type: ignore[misc]
                 for path in [MANIFEST] + [e["path"] for e in files]:
                     if not safe_rel_path(path):
                         raise ValueError(f"unsafe path in manifest: {path!r}")
@@ -211,7 +262,77 @@ class Verifier:
                 return None
             lst = self._listing[bundle_id]
         u = lst[3].get(path)
-        return (self.store.open(u.key), u.stored_size) if u else None
+        if u is None:
+            return None
+        if u.meta.get("path") == ARCHIVE:  # the entry lives inside an uploaded zip
+            local, _ = self._local_zip(u)
+            entry = _ZipEntry(local, path)
+            return entry, entry.size
+        return self.store.open(u.key), u.stored_size
+
+    def _local_zip(self, u: Upload) -> tuple[Path, str]:
+        """(local copy, sha256) of an uploaded zip; copied once, a few copies are kept (see ZIP_COPIES_KEPT)."""
+        ck = (u.key, u.stored_size, u.mtime)
+        with self._zlock:
+            hit = self._zip_copies.get(ck)
+            if hit is not None and hit[0].exists():
+                self._zip_copies.move_to_end(ck)
+                return hit
+            if self._zip_dir is None:
+                self._zip_dir = tempfile.mkdtemp(prefix="verifier-zip-")
+                weakref.finalize(self, shutil.rmtree, self._zip_dir, True)
+            fd, name = tempfile.mkstemp(dir=self._zip_dir, suffix=".zip")
+            dest, h = Path(name), hashlib.sha256()
+            try:
+                with self.store.open(u.key) as src, os.fdopen(fd, "wb") as out:
+                    for chunk in iter_chunks(src):
+                        h.update(chunk)
+                        out.write(chunk)
+            except BaseException:
+                dest.unlink(missing_ok=True)
+                raise
+            self._zip_copies[ck] = (dest, h.hexdigest())
+            while len(self._zip_copies) > self.ZIP_COPIES_KEPT:
+                _, (old, _sha) = self._zip_copies.popitem(last=False)
+                try:
+                    old.unlink(missing_ok=True)
+                except OSError:  # still open (Windows): the finalizer removes the whole directory later
+                    pass
+            return self._zip_copies[ck]
+
+    def _check_archive(self, st: Status, arc: Upload) -> Status:
+        """Status of a bundle that arrived as one bundle.zip upload."""
+        from ckit.bundle.archive import verify_archive
+
+        local, sha = self._local_zip(arc)
+        declared = arc.meta.get("sha256")
+        if declared and sha != declared:
+            problems: list[str] = ["sha256 differs from the uploader's value"]
+            names: list[str] = []
+            validation = None
+        else:
+            if sha not in self._archive_cache:
+                found = verify_archive(local)
+                names, validation = [], None
+                if not found:
+                    with zipfile.ZipFile(local) as zf:
+                        names = zf.namelist()
+                        validation = json.loads(zf.read(MANIFEST)).get("validation")
+                self._archive_cache[sha] = (found, names, validation)
+            problems, names, validation = self._archive_cache[sha]
+        if problems:
+            reason = "; ".join(problems[:5])
+            self._listing.pop(st.bundle_id, None)  # a damaged zip serves nothing, also not from an earlier listing
+            st.status, st.reason = "CORRUPT", f"{ARCHIVE}: {reason}"
+            st.corrupt.append({"path": ARCHIVE, "reason": reason})
+            return st
+        st.status, st.reason = "COMPLETE", f"{len(names)} files verified ({ARCHIVE})"
+        st.received, st.verdict = list(names), validation
+        self._listing[st.bundle_id] = (sha, arc, [{"path": n} for n in names if n != MANIFEST], {n: arc for n in names}, time.monotonic())
+        if self.validator is not None:  # a finished result only; check() never validates
+            st.server_validation = self._validation_cache.get((st.bundle_id, sha))
+            st.server_validation_state = "done" if st.server_validation else "pending"
+        return st
 
     def _sha256(self, u: Upload) -> str:
         ck = (u.key, u.stored_size, u.mtime)
@@ -237,6 +358,9 @@ class Verifier:
         done = self._latest_complete(ups)
         st = Status(bundle_id, "PENDING", received=list(done))
         man = done.get(MANIFEST)
+        arc = done.get(ARCHIVE)
+        if arc is not None and (man is None or arc.mtime >= man.mtime):  # a whole-bundle zip, newer than any manifest
+            return self._check_archive(st, arc)
         if man is None:
             st.reason = "manifest.json has not arrived (it is uploaded last)"
             partial = sorted({u.meta.get("path", "?") for u in ups if not u.complete})

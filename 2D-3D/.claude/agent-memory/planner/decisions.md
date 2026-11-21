@@ -1,0 +1,5 @@
+# Decisions
+2026-11-22 | Move CI to root .github/workflows with 2D-3D/ prefixes and paths filters | keeping nested dirs (GitHub ignores them); one merged workflow (harder to read per project) | repo-polish-hackathon
+2026-11-22 | Archive stale session docs (NEXT_SESSION, HANDOFF) rather than rewrite | rewriting duplicates FEATURE_STATUS.md; deleting loses history | repo-polish-hackathon
+2026-11-22 | Test-all plan: Android first, core/py in WSL background, docker/iOS/device marked blocked; #10 stage 2 gated on user OK as separate brief | one giant fix-everything brief (unreviewable) | test-all-and-finish-pending
+2026-11-22 | #10 stage 2: Kotlin java.util.zip packer matching archive.py layout (not byte-identical), folder fallback, siblings keyed by folder name, tus path "bundle.zip", verifier serves zip entries via existing /files/ endpoint, lazy-imports ckit.bundle.archive | byte-identical zip (java.util.zip can't set external_attr); new dependency (commons-compress); changing roomscan-recon runner to fetch zip (out of repo scope) | issue-10-stage-2

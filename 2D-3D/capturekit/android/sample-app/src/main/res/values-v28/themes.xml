@@ -1,8 +1,16 @@
 <resources>
-    <style name="AppTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
-        <item name="android:windowBackground">#FF101418</item>
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ck_bg</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:colorPrimary">@color/ck_surface1</item>
+        <item name="android:colorPrimaryDark">@color/ck_bg</item>
+        <item name="android:colorAccent">@color/ck_accent</item>
+        <item name="android:colorControlActivated">@color/ck_accent</item>
+        <item name="android:colorControlHighlight">#1FFFFFFF</item>
+        <item name="android:textColorPrimary">@color/ck_on_surface</item>
+        <item name="android:textColorSecondary">@color/ck_on_surface_variant</item>
+        <item name="android:alertDialogTheme">@style/AppDialog</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
 </resources>

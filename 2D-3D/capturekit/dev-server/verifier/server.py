@@ -1,6 +1,6 @@
 """HTTP front for the verifier: tusd post-finish hook + status API. S3/MinIO storage (boto3).
 
-  POST /hook             tusd http hook (post-finish): logs, pre-verifies the bundle. Always 200.
+  POST /hook             tusd http hook (post-finish): logs, pre-verifies the bundle (after manifest.json or bundle.zip). Always 200.
   GET  /bundles/<id>     recomputed status JSON (PENDING/INCOMPLETE/CORRUPT/COMPLETE) plus
                          server_validation {verdict, issues} once COMPLETE
   GET  /bundles/<id>/files/<path>   one manifest-listed file of a COMPLETE bundle (404 otherwise)
@@ -20,7 +20,7 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-from bundle_verify import Store, Upload, Verifier, iter_chunks, post_job, semantic_validator
+from bundle_verify import ARCHIVE, Store, Upload, Verifier, iter_chunks, post_job, semantic_validator
 
 log = logging.getLogger("verifier")
 BUCKET = os.environ.get("S3_BUCKET", "scanbundles")
@@ -142,7 +142,7 @@ class Handler(BaseHTTPRequestHandler):
             meta = ev["Event"]["Upload"]["MetaData"]
             bid, path = meta.get("bundle_id"), meta.get("path")
             log.info("post-finish bundle=%s path=%s", bid, path)
-            if bid and path == "manifest.json":
+            if bid and path in ("manifest.json", ARCHIVE):
                 # Off the request thread: validation may download the bundle, and the hook must answer at once.
                 threading.Thread(target=after_manifest, args=(bid,), daemon=True).start()
         except Exception:  # noqa: BLE001

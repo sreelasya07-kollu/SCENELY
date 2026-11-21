@@ -398,8 +398,9 @@ public final class CaptureSession: NSObject, ARSessionDelegate, @unchecked Senda
     }
 
     // MARK: lifecycle
-    public func pause() { if let h = handle { _ = ck_session_pause(h, nowNs) } }
-    public func resume() { if let h = handle { _ = ck_session_resume(h, nowNs) } }
+    /// Returns the core status (additive: the capture screen shows "cannot resume yet" on `CK_ERR_POLICY`); `CK_ERR_STATE` before `start`.
+    @discardableResult public func pause() -> ck_status { handle.map { ck_session_pause($0, nowNs) } ?? CK_ERR_STATE }
+    @discardableResult public func resume() -> ck_status { handle.map { ck_session_resume($0, nowNs) } ?? CK_ERR_STATE }
 
     /// Stops capture, lets pending keyframes encode, finalizes the bundle.
     public func finish() -> ck_status {

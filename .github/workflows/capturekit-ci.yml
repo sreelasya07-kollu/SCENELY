@@ -1,0 +1,182 @@
+name: CaptureKit CI (Part 1)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "2D-3D/**"
+      - ".github/workflows/capturekit-ci.yml"
+  pull_request:
+    paths:
+      - "2D-3D/**"
+      - ".github/workflows/capturekit-ci.yml"
+
+concurrency:
+  group: capturekit-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: 2D-3D/capturekit
+
+jobs:
+  core:
+    name: core (cmake + ctest)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Configure
+        run: cmake -S core -B build/core -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build/core --parallel
+      - name: Test
+        run: ctest --test-dir build/core --output-on-failure
+
+  core-sanitizers:
+    name: core (ASAN+UBSAN, TSAN on session)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: ASAN + UBSAN, all tests
+        run: |
+          cmake -S core -B build/asan -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+          cmake --build build/asan --parallel --target capturekit_core_tests
+          UBSAN_OPTIONS=halt_on_error=1 build/asan/tests/capturekit_core_tests
+      - name: TSAN, session tests x5
+        run: |
+          cmake -S core -B build/tsan -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_FLAGS="-fsanitize=thread" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
+          cmake --build build/tsan --parallel --target capturekit_core_tests
+          TSAN_OPTIONS=halt_on_error=1 build/tsan/tests/capturekit_core_tests --gtest_filter='Session*' --gtest_repeat=5
+
+  python:
+    name: python (ruff + pytest)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: 2D-3D/capturekit/tools
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive   # _ckcore (C++ core bindings) is built from core/
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+      - name: Install (locked)
+        run: uv sync --locked --extra dev
+      - name: Build _ckcore
+        run: ../scripts/build_core_py.sh
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Test
+        run: uv run pytest
+      - name: CLI smoke
+        run: uv run ckit --version
+      - name: Golden replay regression (3 small synthetic sessions, < 3 min)
+        working-directory: 2D-3D/capturekit
+        timeout-minutes: 5
+        run: scripts/replay_golden.sh
+
+  upload:
+    name: "upload (docker: smoke + failure matrix)"
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: 2D-3D/capturekit/tools
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked --extra dev
+      - run: ../scripts/build_core_py.sh
+      - name: Smoke (bundle -> tus -> verifier COMPLETE)
+        working-directory: 2D-3D/capturekit/dev-server
+        run: ./smoke.sh
+      - name: Failure matrix
+        working-directory: 2D-3D/capturekit/dev-server
+        run: ./failure_test.sh
+
+  android:
+    name: android (assemble + unit tests)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: 2D-3D/capturekit/android
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive   # core/ is compiled via externalNativeBuild
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Assemble (library + standard and field flavours) + unit tests
+        # AGP downloads the pinned NDK/CMake into the runner's SDK if missing.
+        run: >
+          ./gradlew :capturekit:assembleDebug
+          :sample-app:assembleStandardDebug :sample-app:assembleFieldDebug
+          :capturekit:testDebugUnitTest :sample-app:testStandardDebugUnitTest --console=plain
+      - name: Both flavour APKs exist
+        run: |
+          for fl in standard field; do
+            ls sample-app/build/outputs/apk/$fl/debug/*.apk >/dev/null || { echo "::error::missing $fl debug APK"; exit 1; }
+          done
+      - name: APK size per flavour (report only, limit TBD owner)
+        working-directory: 2D-3D/capturekit
+        run: bash scripts/apk_size.sh android
+
+  schema-compat:
+    name: schema-compat (frozen 1.0.0 bundle still validates)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: 2D-3D/capturekit/tools
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked --extra dev
+      - name: Fixture present and unmodified
+        working-directory: 2D-3D/capturekit/spec/scanbundle/examples/frozen-1.0.0
+        run: |
+          test -f manifest.json || { echo "::error::frozen-1.0.0 fixture missing (see its README.md)"; exit 1; }
+          sha256sum --check --strict SHA256SUMS
+          find . -type f ! -name README.md ! -name .gitattributes ! -name SHA256SUMS | sed 's|^\./||' | sort > /tmp/actual.txt
+          awk '{print $2}' SHA256SUMS | sed 's|^\*||;s|^\./||' | sort > /tmp/listed.txt
+          diff /tmp/listed.txt /tmp/actual.txt || { echo "::error::fixture files differ from SHA256SUMS"; exit 1; }
+          grep -q '"schema_version": *"1\.0\.0"' manifest.json
+      - name: Validate with current validator (pure Python, no core build needed)
+        run: uv run ckit validate ../spec/scanbundle/examples/frozen-1.0.0 --level semantic
+
+  ios:
+    name: ios (swift build/test, non-blocking: never compiled yet)
+    runs-on: macos-15
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: 2D-3D/capturekit/ios
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Toolchain
+        run: xcodebuild -version && swift --version
+      - name: swift build (macOS host)
+        run: swift build
+      - name: swift test (macOS host)
+        run: swift test
+      - name: Build for iOS Simulator
+        run: xcodebuild build -scheme CaptureKit -destination 'generic/platform=iOS Simulator' -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO

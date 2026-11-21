@@ -28,3 +28,14 @@ roomscan-recon/data/*
 !roomscan-recon/data/fetch_replica.py
 !roomscan-recon/data/extract_nyu.py
 !roomscan-recon/data/DATASETS.md
+
+# IDE / tooling / local config
+.idea/
+*.iml
+.vscode/
+.serena/
+
+# Android build outputs and local SDK paths
+.gradle/
+local.properties
+.cxx/

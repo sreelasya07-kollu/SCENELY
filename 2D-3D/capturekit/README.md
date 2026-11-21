@@ -1,9 +1,9 @@
 # CaptureKit
 
-CaptureKit is Part 1 (Intelligent Room Capture) of the two-part Room Scanner Program: a cross-platform phone SDK
+CaptureKit is Part 1 (Intelligent Room Capture) of the two-part SCENELY program: a cross-platform phone SDK
 (iOS: Swift + ARKit, Android: Kotlin + ARCore, with a shared C++20 core) that records
-video, camera poses, IMU and exposure metadata, packages them as a versioned **Scan Bundle**
-(`manifest.json` + `video.mp4` + `streams.mcap` + `camera.json` + checksums), and uploads
+keyframe images, camera poses, IMU and exposure metadata, packages them as a versioned **Scan Bundle**
+(`manifest.json` + `streams.mcap` + indexed JPEG keyframes + `camera.json` + checksums; ADR 0001), and uploads
 them with the tus resumable-upload protocol. Python tooling (`ckit`) validates, inspects
 and converts bundles for downstream reconstruction.
 
@@ -53,4 +53,4 @@ docker compose up -d && ./smoke_test.sh
 Never commit secrets, keystores, signing profiles or real scan data.
 
 ## Related Packages
-- [roomscan-recon](https://github.com/RealKarthiksai/roomscan-recon): Backend spatial understanding and 3D Gaussian Splatting reconstruction pipeline for CaptureKit scan bundles.
+- [roomscan-recon](../../roomscan-recon/README.md): Part 2, backend spatial understanding and 3D Gaussian Splatting reconstruction for CaptureKit Scan Bundles (same monorepo).

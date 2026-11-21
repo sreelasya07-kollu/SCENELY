@@ -39,4 +39,29 @@ class UploadPlanTest {
         assertEquals(ServerStatus("COMPLETE", "ok", emptyList(), emptyList()).status, ServerStatus.parse("""{"corrupt":[],"missing":[],"reason":"ok","status":"COMPLETE"}""").status)
         assertTrue(ServerStatus.parse("""{"corrupt":[],"missing":[],"reason":"","status":"PENDING"}""").let { !it.isFinal })
     }
+
+    @Test
+    fun archivePathIsTheFixedZipMarker() {
+        assertEquals("bundle.zip", UploadPlan.ARCHIVE_PATH)
+    }
+
+    @Test
+    fun parsesAZipCorruptVerdict() {
+        val json = """{"bundle_id":"b","corrupt":[{"path":"bundle.zip","reason":"sha256 mismatch: streams.mcap"}],
+            "missing":[],"reason":"bundle.zip is not sound","received":[],"status":"CORRUPT","verdict":null}"""
+        val s = ServerStatus.parse(json)
+        assertEquals("CORRUPT", s.status); assertTrue(s.isFinal)
+        assertEquals(listOf(UploadPlan.ARCHIVE_PATH), s.corruptPaths)
+        assertTrue(UploadPlan.ARCHIVE_PATH in s.corruptPaths)   // what makes the uploader re-send the zip once
+    }
+
+    @Test
+    fun siblingKeysUseTheFolderNameForTheZipToo() {
+        val root = Files.createTempDirectory("keys").toFile()
+        val dir = File(root, "scan_1"); val zip = File(root, "scan_1.zip")
+        assertEquals(UploadPolicy.verifiedMarker(dir), UploadPolicy.verifiedMarker(zip))
+        assertEquals(File(root, "scan_1.upload_verified").name, UploadPolicy.verifiedMarker(zip).name)
+        assertEquals(dev.capturekit.capture.ResearchReport.fileFor(dir), dev.capturekit.capture.ResearchReport.fileFor(zip))
+        root.deleteRecursively()
+    }
 }

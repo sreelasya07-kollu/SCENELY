@@ -45,40 +45,51 @@ import java.util.Locale
 import kotlin.math.min
 
 /**
- * CaptureKit design system: monochrome (Apple / Notion), Liquid Glass surfaces, one type scale.
- * Colour only carries meaning (status); everything else is white at different opacities over near-black.
+ * CaptureKit design system. Every value reads [DesignTokens]: dark first, one brand accent (teal), colour elsewhere
+ * only carries status. Non-capture screens use tonal solid surfaces; the capture HUD keeps translucent glass so the
+ * camera preview shows through. Existing names are kept so call sites recolour for free.
  */
 object UiKit {
-    // ---- Palette ----
-    const val BG = 0xFF0A0A0B.toInt()
-    const val LABEL = 0xFFF5F5F7.toInt()          // primary text
-    const val LABEL_2 = 0xA6EBEBF5.toInt()        // secondary text (65%)
-    const val LABEL_3 = 0x61EBEBF5                // tertiary text / captions (38%)
-    const val SEPARATOR = 0x1AFFFFFF
-    const val FILL = 0x14FFFFFF                   // icon tiles, quiet fills
+    // ---- Palette (aliases of DesignTokens) ----
+    const val BG = DesignTokens.BG
+    const val SURFACE_1 = DesignTokens.SURFACE_1
+    const val SURFACE_2 = DesignTokens.SURFACE_2
+    const val SURFACE_3 = DesignTokens.SURFACE_3
+    const val LABEL = DesignTokens.ON_SURFACE              // primary text
+    const val LABEL_2 = DesignTokens.ON_SURFACE_VARIANT    // secondary text
+    const val LABEL_3 = DesignTokens.ON_SURFACE_MUTED      // tertiary text / captions
+    const val SEPARATOR = 0x1FFFFFFF
+    const val FILL = 0x14FFFFFF                            // quiet fills
 
-    // Status only (Apple dark-mode system colours).
-    const val GREEN = 0xFF30D158.toInt()
-    const val AMBER = 0xFFFF9F0A.toInt()
-    const val RED = 0xFFFF453A.toInt()
-    /** Primary action: off-white with black text. (Name kept for existing call sites; there is no blue accent.) */
-    const val BLUE_ACCENT = LABEL
-    const val PRIMARY = LABEL
-    /** "In progress" ink for live room data; neutral white, no hue. */
+    // Status.
+    const val GREEN = DesignTokens.SUCCESS
+    const val AMBER = DesignTokens.WARNING
+    const val RED = DesignTokens.ERROR
+    /** Brand accent; the one prominent action per screen. */
+    const val ACCENT = DesignTokens.ACCENT
+    const val ON_ACCENT = DesignTokens.ON_ACCENT
+    const val ACCENT_CONTAINER = DesignTokens.ACCENT_CONTAINER
+    const val ON_ACCENT_CONTAINER = DesignTokens.ON_ACCENT_CONTAINER
+    /** Primary action colour sentinel (call sites pass it to [bigButton]/[recolor]/[setChip]). */
+    const val PRIMARY = ACCENT
+    const val BLUE_ACCENT = ACCENT
+    /** "In progress" ink for live room data; neutral so it never reads as a status. */
     const val CYAN_ACCENT = 0xFFE5E5EA.toInt()
     const val PANEL = 0xFF3A3A3C.toInt()
+    /** Tonal (solid) secondary surface sentinel: quiet buttons on non-capture screens. */
+    const val TONAL = SURFACE_3
 
-    // ---- Glass ----
-    const val GLASS = 0x8C2C2C2E.toInt()          // glass body: translucent graphite, reads on black and over the camera
-    const val GLASS_STRONG = 0xB32C2C2E.toInt()   // over busy camera content
+    // ---- Glass (capture HUD only) ----
+    const val GLASS = DesignTokens.GLASS
+    const val GLASS_STRONG = DesignTokens.GLASS_STRONG
     const val BORDER_STROKE = 0x1FFFFFFF          // one even hairline edge
 
     // ---- Shape / type ----
-    const val RADIUS_DP = 22
-    const val RADIUS_PILL_DP = 999
-    const val TEXT_S = 13f
+    const val RADIUS_DP = DesignTokens.R_16
+    const val RADIUS_PILL_DP = DesignTokens.R_PILL
+    const val TEXT_S = 14f
     const val TEXT_M = 16f
-    const val TEXT_L = 20f
+    const val TEXT_L = 22f
     val MEDIUM: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
     val BOLD: Typeface = Typeface.create("sans-serif", Typeface.BOLD)
 
@@ -90,14 +101,18 @@ object UiKit {
     private fun isStatus(c: Int) = c == GREEN || c == AMBER || c == RED ||
         (Color.alpha(c) == 0xFF && saturation(c) > 0.35f && c != PRIMARY)
     private fun saturation(c: Int): Float { val hsv = FloatArray(3); Color.colorToHSV(c, hsv); return hsv[1] }
-    private fun withAlpha(c: Int, a: Int) = (c and 0x00FFFFFF) or (a shl 24)
+    internal fun withAlpha(c: Int, a: Int) = (c and 0x00FFFFFF) or (a shl 24)
 
-    /** Glass body for [color]: primary = solid off-white; status = glass tinted by the hue; anything else = plain glass. */
+    /** Text colour on top of a button/chip filled with [color]. */
+    internal fun onFill(color: Int): Int = if (color == PRIMARY) ON_ACCENT else LABEL
+
+    /** Surface for [color]: primary = solid accent; tonal = solid surface; status = glass tinted by the hue; anything else = plain glass. */
     private fun surfaceFor(ctx: Context, radiusDp: Int, color: Int): Drawable {
         val r = ctx.dpF(radiusDp.toFloat())
         val d = ctx.resources.displayMetrics.density
         return when {
-            color == PRIMARY -> LiquidGlass(r, d, fill = PRIMARY, rimStrength = 0.5f)
+            color == PRIMARY -> LiquidGlass(r, d, fill = PRIMARY, rimStrength = 0f)
+            color == TONAL -> LiquidGlass(r, d, fill = TONAL, rimStrength = 0f)
             isStatus(color) -> LiquidGlass(r, d, fill = GLASS, tint = withAlpha(color, 0x3D))
             else -> LiquidGlass(r, d, fill = GLASS)
         }
@@ -118,15 +133,15 @@ object UiKit {
             if (strokeWidthPx > 0) setStroke(strokeWidthPx, strokeColor)
         }
 
-    /** Glass card. The colour arguments are kept for call-site compatibility; cards are always neutral glass. */
+    /** Tonal card: solid surface with a hairline so it separates from the page. Colour arguments kept for call-site compatibility. */
     @Suppress("UNUSED_PARAMETER")
-    fun card(ctx: Context, radiusDp: Int = 24, bgColor: Int = GLASS, strokeColor: Int = BORDER_STROKE): Drawable =
-        LiquidGlass(ctx.dpF(radiusDp.toFloat()), ctx.resources.displayMetrics.density, fill = GLASS)
+    fun card(ctx: Context, radiusDp: Int = DesignTokens.R_24, bgColor: Int = SURFACE_2, strokeColor: Int = BORDER_STROKE): Drawable =
+        rounded(SURFACE_2, ctx.dpF(minOf(radiusDp, DesignTokens.R_24).toFloat()), 0x14FFFFFF, maxOf(1, ctx.dp(1) / 2))
 
     /** Tappable glass with a soft white ripple. */
     fun rippleSurface(ctx: Context, radiusDp: Int, bgColor: Int, @Suppress("UNUSED_PARAMETER") strokeColor: Int = BORDER_STROKE): RippleDrawable {
         val mask = GradientDrawable().apply { setColor(Color.WHITE); cornerRadius = ctx.dpF(radiusDp.toFloat()) }
-        val ripple = if (bgColor == PRIMARY) 0x22000000 else 0x1FFFFFFF
+        val ripple = if (bgColor == PRIMARY) 0x2E000000 else 0x1FFFFFFF
         return RippleDrawable(ColorStateList.valueOf(ripple), surfaceFor(ctx, radiusDp, bgColor), mask)
     }
 
@@ -140,7 +155,7 @@ object UiKit {
         scaleType = ImageView.ScaleType.FIT_CENTER
     }
 
-    fun circularIconButton(ctx: Context, drawableId: Int, description: String, sizeDp: Int = 44, bgColor: Int = GLASS): FrameLayout =
+    fun circularIconButton(ctx: Context, drawableId: Int, description: String, sizeDp: Int = 44, bgColor: Int = GLASS, tint: Int = LABEL): FrameLayout =
         FrameLayout(ctx).apply {
             isClickable = true
             isFocusable = true
@@ -148,27 +163,27 @@ object UiKit {
             minimumHeight = ctx.dp(sizeDp)
             contentDescription = description
             background = rippleSurface(ctx, RADIUS_PILL_DP, bgColor)
-            addView(iconImage(ctx, drawableId, LABEL), FrameLayout.LayoutParams(ctx.dp(20), ctx.dp(20), Gravity.CENTER))
+            addView(iconImage(ctx, drawableId, tint), FrameLayout.LayoutParams(ctx.dp(20), ctx.dp(20), Gravity.CENTER))
         }
 
     fun statusText(ctx: Context, sizeSp: Float = 16f): TextView = TextView(ctx).apply {
         textSize = sizeSp
         setTextColor(LABEL)
-        background = glass(ctx, 16)
+        background = glass(ctx, DesignTokens.R_16)
         setPadding(ctx.dp(14), ctx.dp(10), ctx.dp(14), ctx.dp(10))
     }
 
     /** Capsule button. [color] PRIMARY = off-white with black text (the one prominent action); others = glass. */
     fun bigButton(ctx: Context, label: String, color: Int = PRIMARY): Button = Button(ctx).apply {
         text = label
-        textSize = 17f
+        textSize = DesignTokens.TITLE_MEDIUM.sizeSp
         isAllCaps = false
         stateListAnimator = null
         typeface = MEDIUM
-        setTextColor(if (color == PRIMARY) Color.BLACK else LABEL)
+        setTextColor(onFill(color))
         background = rippleSurface(ctx, RADIUS_PILL_DP, color)
-        minimumHeight = ctx.dp(54)
-        minHeight = ctx.dp(54)
+        minimumHeight = ctx.dp(52)
+        minHeight = ctx.dp(52)
         setPadding(ctx.dp(24), ctx.dp(12), ctx.dp(24), ctx.dp(12))
         pressScale(this)
     }
@@ -197,7 +212,7 @@ object UiKit {
     fun pillBadge(ctx: Context, label: String, bgColor: Int, textColor: Int, strokeColor: Int = 0): TextView =
         TextView(ctx).apply {
             text = label
-            textSize = 12f
+            textSize = DesignTokens.LABEL_MEDIUM.sizeSp
             setTextColor(if (isStatus(textColor)) textColor else LABEL_2)
             typeface = MEDIUM
             gravity = Gravity.CENTER
@@ -207,12 +222,12 @@ object UiKit {
 
     fun recolor(button: Button, color: Int) {
         button.background = rippleSurface(button.context, RADIUS_PILL_DP, color)
-        button.setTextColor(if (color == PRIMARY) Color.BLACK else LABEL)
+        button.setTextColor(onFill(color))
     }
 
     /** Capsule chip (text set by [setChip]). */
     fun chip(ctx: Context): TextView = TextView(ctx).apply {
-        textSize = 14f
+        textSize = DesignTokens.LABEL_LARGE.sizeSp
         setTextColor(LABEL)
         typeface = MEDIUM
         gravity = Gravity.CENTER_VERTICAL
@@ -229,7 +244,7 @@ object UiKit {
         v.text = SpannableString(shown).apply {
             if (shown.startsWith("●")) setSpan(ForegroundColorSpan(if (status) color else LABEL_2), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
-        v.setTextColor(LABEL)
+        v.setTextColor(onFill(color))
         v.background = rippleSurface(v.context, RADIUS_PILL_DP, color)
     }
 
@@ -241,21 +256,31 @@ object UiKit {
         v.text = if (kind == Kind.INFO) msg else SpannableString("●  $msg").apply {
             setSpan(ForegroundColorSpan(kind.color), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
-        v.textSize = 16f
+        v.textSize = DesignTokens.BODY_LARGE.sizeSp
         v.setTextColor(LABEL)
-        v.background = LiquidGlass(ctx.dpF(18f), ctx.resources.displayMetrics.density, fill = GLASS_STRONG,
-            tint = if (kind == Kind.INFO) 0 else withAlpha(kind.color, 0x2E))
+        val container = when (kind) {
+            Kind.OK -> DesignTokens.SUCCESS_CONTAINER
+            Kind.WARN -> DesignTokens.WARNING_CONTAINER
+            Kind.ERROR -> DesignTokens.ERROR_CONTAINER
+            Kind.INFO -> SURFACE_2
+        }
+        v.background = rounded(container, ctx.dpF(DesignTokens.R_16.toFloat()), withAlpha(if (kind == Kind.INFO) 0xFFFFFF else kind.color, 0x33), maxOf(1, ctx.dp(1) / 2))
         v.setPadding(ctx.dp(16), ctx.dp(12), ctx.dp(16), ctx.dp(12))
     }
 
     // ---- Type ----
-    fun largeTitle(ctx: Context, s: String): TextView = text(ctx, s, 32f, LABEL, BOLD).apply {
+    fun largeTitle(ctx: Context, s: String): TextView = text(ctx, s, DesignTokens.HEADLINE_LARGE.sizeSp, LABEL, BOLD).apply {
         letterSpacing = -0.02f
         if (Build.VERSION.SDK_INT >= 28) isAccessibilityHeading = true
     }
-    fun title(ctx: Context, s: String, size: Float = 22f): TextView = text(ctx, s, size, LABEL, BOLD).apply { letterSpacing = -0.01f }
-    fun body(ctx: Context, s: String, color: Int = LABEL_2, size: Float = 15f): TextView = text(ctx, s, size, color).apply { setLineSpacing(0f, 1.2f) }
-    fun caption(ctx: Context, s: String): TextView = text(ctx, s, 13f, LABEL_3)
+    fun title(ctx: Context, s: String, size: Float = DesignTokens.TITLE_LARGE.sizeSp): TextView = text(ctx, s, size, LABEL, BOLD).apply { letterSpacing = -0.01f }
+    fun body(ctx: Context, s: String, color: Int = LABEL_2, size: Float = DesignTokens.BODY_LARGE.sizeSp): TextView = text(ctx, s, size, color).apply { setLineSpacing(0f, 1.2f) }
+    fun caption(ctx: Context, s: String): TextView = text(ctx, s, DesignTokens.BODY_SMALL.sizeSp, LABEL_3)
+    /** Text styled from a [DesignTokens.TextRole]. */
+    fun role(ctx: Context, s: CharSequence, role: DesignTokens.TextRole, color: Int = LABEL): TextView =
+        text(ctx, s, role.sizeSp, color, when { role.weight >= 700 -> BOLD; role.weight >= 500 -> MEDIUM; else -> Typeface.DEFAULT }).apply {
+            if (role.lineHeightSp > role.sizeSp * 1.25f) setLineSpacing(0f, role.lineHeightSp / (role.sizeSp * 1.17f))
+        }
     fun text(ctx: Context, s: CharSequence, size: Float, color: Int = LABEL, face: Typeface = Typeface.DEFAULT): TextView = TextView(ctx).apply {
         text = s; textSize = size; setTextColor(color); typeface = face
     }
@@ -266,7 +291,7 @@ object UiKit {
     }
 
     // ---- Grouped list (iOS inset-grouped / Notion settings) ----
-    fun sectionHeader(ctx: Context, s: String): TextView = text(ctx, s, 13f, LABEL_3, MEDIUM).apply {
+    fun sectionHeader(ctx: Context, s: String): TextView = text(ctx, s, DesignTokens.LABEL_LARGE.sizeSp, LABEL_2, MEDIUM).apply {
         setPadding(ctx.dp(16), 0, ctx.dp(16), ctx.dp(8))
         if (Build.VERSION.SDK_INT >= 28) isAccessibilityHeading = true
     }
@@ -277,7 +302,7 @@ object UiKit {
         background = card(ctx, RADIUS_DP)
         clipToOutline = true
         showDividers = LinearLayout.SHOW_DIVIDER_MIDDLE
-        dividerDrawable = GradientDrawable().apply { setColor(SEPARATOR); setSize(1, maxOf(1, ctx.dp(1) / 2)) }
+        dividerDrawable = InsetDivider(SEPARATOR, maxOf(1, ctx.dp(1) / 2), ctx.dp(16))
         dividerPadding = 0
     }
 
@@ -288,14 +313,14 @@ object UiKit {
     ): LinearLayout = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        minimumHeight = ctx.dp(56)
+        minimumHeight = ctx.dp(DesignTokens.TOUCH_TARGET + 8)
         setPadding(ctx.dp(16), ctx.dp(12), ctx.dp(14), ctx.dp(12))
-        if (icon != null) addView(iconImage(ctx, icon, LABEL_2),
-            LinearLayout.LayoutParams(ctx.dp(20), ctx.dp(20)).apply { rightMargin = ctx.dp(16) })
+        if (icon != null) addView(iconTile(ctx, icon, if (titleColor == LABEL || titleColor == LABEL_2) ACCENT else titleColor),
+            LinearLayout.LayoutParams(ctx.dp(36), ctx.dp(36)).apply { rightMargin = ctx.dp(16) })
         addView(LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            addView(text(ctx, title, 16f, titleColor, if (titleColor == LABEL) MEDIUM else Typeface.DEFAULT))
-            if (subtitle != null) addView(text(ctx, subtitle, 13.5f, LABEL_2).apply { setPadding(0, ctx.dp(2), 0, 0) })
+            addView(text(ctx, title, DesignTokens.TITLE_MEDIUM.sizeSp, titleColor, if (titleColor == LABEL) MEDIUM else Typeface.DEFAULT))
+            if (subtitle != null) addView(text(ctx, subtitle, DesignTokens.BODY_MEDIUM.sizeSp, LABEL_2).apply { setPadding(0, ctx.dp(2), 0, 0) })
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         val end = trailing ?: if (onClick != null && chevron) iconImage(ctx, R.drawable.ic_chevron_right, LABEL_3) else null
         if (end != null) addView(end, if (trailing == null) LinearLayout.LayoutParams(ctx.dp(18), ctx.dp(18)).apply { leftMargin = ctx.dp(8) }
@@ -307,12 +332,12 @@ object UiKit {
         }
     }
 
-    /** iOS-style switch: white thumb, green track when on. */
+    /** Switch: accent track when on, quiet outline track when off. */
     fun toggle(ctx: Context, checked: Boolean): Switch = Switch(ctx).apply {
         isChecked = checked
         val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
-        thumbTintList = ColorStateList(states, intArrayOf(Color.WHITE, 0xFFE5E5EA.toInt()))
-        trackTintList = ColorStateList(states, intArrayOf(GREEN, 0x52787880))
+        thumbTintList = ColorStateList(states, intArrayOf(ON_ACCENT, LABEL_2))
+        trackTintList = ColorStateList(states, intArrayOf(ACCENT, DesignTokens.OUTLINE))
         if (Build.VERSION.SDK_INT >= 29) trackTintMode = android.graphics.PorterDuff.Mode.SRC
     }
 
@@ -398,12 +423,12 @@ object UiKit {
         }
     }
 
-    /** Quiet secondary button (glass), same shape as [bigButton]. */
-    fun secondaryButton(ctx: Context, label: String): Button = bigButton(ctx, label, GLASS)
+    /** Quiet secondary button (tonal surface), same shape as [bigButton]. */
+    fun secondaryButton(ctx: Context, label: String): Button = bigButton(ctx, label, TONAL)
 
     /** Text that keeps one or two lines and cuts the middle (long file paths). */
     fun pathText(ctx: Context, text: String, lines: Int = 2): TextView = TextView(ctx).apply {
-        this.text = text; textSize = 13f; setTextColor(LABEL_3)
+        this.text = text; textSize = DesignTokens.BODY_SMALL.sizeSp; setTextColor(LABEL_3)
         maxLines = lines; ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
     }
 }

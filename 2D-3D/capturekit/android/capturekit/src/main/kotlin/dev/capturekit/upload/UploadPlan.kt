@@ -7,6 +7,9 @@ import java.security.MessageDigest
 object UploadPlan {
     const val MANIFEST = "manifest.json"
 
+    /** tus metadata `path` of a whole-bundle zip upload (ADR 0040): the one-upload archive marker the verifier looks for. */
+    const val ARCHIVE_PATH = "bundle.zip"
+
     /** Every file of the bundle, relative paths with '/', manifest.json LAST (server verifies on its arrival). */
     fun order(bundle: File): List<String> {
         val all = bundle.walkTopDown().filter { it.isFile && !it.name.endsWith(".tmp") && !it.name.startsWith(".ckit_upload") }

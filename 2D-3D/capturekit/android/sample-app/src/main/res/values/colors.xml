@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Mirrors DesignTokens.kt; the theme reads these, code reads DesignTokens. -->
+<resources>
+    <color name="ck_bg">#FF0B0D0E</color>
+    <color name="ck_surface1">#FF14181A</color>
+    <color name="ck_surface2">#FF1B2023</color>
+    <color name="ck_surface3">#FF242B2E</color>
+    <color name="ck_on_surface">#FFF2F5F5</color>
+    <color name="ck_on_surface_variant">#FFB4BEC0</color>
+    <color name="ck_outline">#FF3A4548</color>
+    <color name="ck_accent">#FF2DD4BF</color>
+    <color name="ck_on_accent">#FF00201C</color>
+    <color name="ck_accent_container">#FF0F3B36</color>
+    <color name="ck_scrim">#99000000</color>
+</resources>

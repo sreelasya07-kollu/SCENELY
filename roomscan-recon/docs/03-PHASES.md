@@ -20,7 +20,7 @@
 | P4 | Fusion | #4 | [PROGRESS.md](../PROGRESS.md) | [PHASE_4](PHASE_REPORTS/PHASE_4.md) |
 | P5 | Planes + room shell | #5 | [PROGRESS.md](../PROGRESS.md) | [PHASE_5](PHASE_REPORTS/PHASE_5.md) |
 | P6 | SpatialMap writer, schemas, CLI | #6 | [PROGRESS.md](../PROGRESS.md) | [PHASE_6](PHASE_REPORTS/PHASE_6.md) |
-| P7 | Part 4 sparse | #7 | [PROGRESS.md](../PROGRESS.md) | [PHASE_7](PHASE_REPORTS/PHASE_7.md) |
+| P7 | Part 2 recon stage sparse | #7 | [PROGRESS.md](../PROGRESS.md) | [PHASE_7](PHASE_REPORTS/PHASE_7.md) |
 | P8 | Dense + mesh + texture | #7 | [PROGRESS.md](../PROGRESS.md) | [PHASE_8](PHASE_REPORTS/PHASE_8.md) |
 | P9 | Gaussian splatting (GPU) | #8 | [PROGRESS.md](../PROGRESS.md) | [PHASE_9](PHASE_REPORTS/PHASE_9.md) |
 | P10 | Reconstruction packaging + end-to-end | #9 | [PROGRESS.md](../PROGRESS.md) | [PHASE_10](PHASE_REPORTS/PHASE_10.md) |

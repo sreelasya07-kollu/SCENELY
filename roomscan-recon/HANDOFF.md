@@ -1,3 +1,5 @@
+> **Historical build brief (written 2026-11-12), partly superseded.** The current whole-program feature table is [docs/FEATURE_STATUS.md](docs/FEATURE_STATUS.md). Sections 1, 3 and 4.1 describe an old `reconstruction/packages/...` layout and a skeleton CaptureKit that no longer match the repo (the code is flat: `spatial/`, `recon/`, `formats/`; Part 1 is `../2D-3D`). Sections 2 (owner rules) and 5 (acceptance thresholds) are still cited by CLAUDE.md, the docs and the tests, so this file stays in place. Naming below ("Part 3", "Part 4") means the Part 2 spatial and recon stages.
+
 # Room Scanner Parts 3 & 4: handoff for the GPU machine
 
 This file is for a new Claude Code session (and the people working with it) continuing

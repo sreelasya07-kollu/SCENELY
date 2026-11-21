@@ -1,19 +1,19 @@
 # Part 1 (Intelligent Room Capture, `capturekit/`): status and what is needed from you
 
-The program now has two parts (see [program-spec/README.md](program-spec/README.md)). This repository is Part 1 only; Part 2 (backend reconstruction) is built separately in `roomscan-recon`.
+The program now has two parts (see [program-spec/README.md](program-spec/README.md)). This repository is Part 1 only; Part 2 (backend reconstruction) is built in the sibling directory `roomscan-recon` of the same monorepo (SCENELY).
 
-See also [NEXT_SESSION.md](NEXT_SESSION.md) for the copy-paste start kit for a new conversation.
+Historical agent start kit (superseded by this file): [../../docs/dev/NEXT_SESSION.md](../../docs/dev/NEXT_SESSION.md).
 
 2026-11-22: the 14-stage feature table for the whole program (phone and backend) is [roomscan-recon/docs/FEATURE_STATUS.md](../../roomscan-recon/docs/FEATURE_STATUS.md); how to run the GPU items on another machine is [roomscan-recon/docs/heavy-compute/GPU_RUNBOOK.md](../../roomscan-recon/docs/heavy-compute/GPU_RUNBOOK.md).
 
-Updated 2026-11-20 · branch `main` (everything committed; GitHub RealKarthiksai/2D-3D issues #1-#10 are closed; see PROGRESS.md; history was rewritten once, older hashes in old reports no longer exist) · tests only you can run: [HUMAN_TESTS.md](HUMAN_TESTS.md)
+Updated 2026-11-20 · branch `main` (everything committed; issues #1-#10 of the former standalone 2D-3D GitHub repo are closed; see PROGRESS.md; history was rewritten once, older hashes in old reports no longer exist) · tests only you can run: [HUMAN_TESTS.md](HUMAN_TESTS.md)
 
 ### GitHub issues vs the code (audited 2026-11-20 on `cded9a6`)
 | Issue | Delivered in `main`? | What is missing |
 |---|---|---|
 | #1 tracking recalibration | Yes (ADR 0031) | Card is OFF by default (`recalibrate_card`); cover/uncover device check (H36) not run |
 | #2 object detection | Yes (ADR 0030, superseded in part by 0032) | Detector OFF by default; never device-tested |
-| #3 UI overhaul | Partly: One UI 7 style redesign (`UiKit`, drawables, new Home/Review/My scans) | Not Material 3 / Compose as the issue proposed; mini-map redesign moot (#8 removed it from the capture screen) |
+| #3 UI overhaul | Android sample app refresh delivered in native Views: design tokens/theme, onboarding, home, scan library, capture HUD, review/results, loading/empty states, settings and accessibility | Android builds and design-token tests pass. Compose migration is intentionally out per ADR 0039; physical-device visual/accessibility sign-off remains pending. Mini-map redesign is moot (#8 removed it from the capture screen). |
 | #6 feature audit | Yes (ADR 0032, table below) | "Stop writing bundle data that only removed features used" depends on #10 |
 | #7 `ckit recon-bench` | Yes (`docs/reports/recon_bench.md`) | Second walked room (blocked: needs a new recording) |
 | #8 live segmentation | Code + 3 test classes (`segment/`, SAM 2.1 tiny via LiteRT); OFF (`segmentation`) | No ADR for the model choice; the 2-3 model trial and a device run never happened |

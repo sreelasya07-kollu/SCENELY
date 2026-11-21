@@ -12,6 +12,7 @@ import android.util.Log
 import com.google.ar.core.Frame
 import dev.capturekit.nativebridge.CaptureKitNative as N
 import dev.capturekit.nativebridge.Status
+import dev.capturekit.upload.BundleArchive
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -305,8 +306,15 @@ class SessionManager(
         db.setStatus(dir.absolutePath, if (st == Status.OK) "complete" else "unrecoverable")
         destroyHandle()
         LiveSessions.remove(dir.absolutePath)   // only after the final status is written
+        // One zip instead of the loose folder (ADR 0040). The folder goes only after the zip verified; on any failure
+        // the folder stays and everything keeps working from it. Off the main thread: finish() already is.
+        if (st == Status.OK) archive = packBundle(dir)
         return st
     }
+
+    /** The packed `<dir>.zip` after a good [finish]; null if the scan was not OK or packing failed (the folder is kept then). */
+    @Volatile var archive: File? = null
+        private set
 
     /** Frees the native session exactly once; handle becomes 0 under the lock, so no caller can see a freed handle. */
     private fun destroyHandle() {
@@ -373,10 +381,15 @@ class SessionManager(
                 !LiveSessions.contains(dir) && dao.interrupted().any { it.dir == dir }
             }.map { dir ->
                 val rep = N.recover(dir)
-                dao.setStatus(dir, if (rep.contains("\"ok\":true")) "recovered" else "unrecoverable")
+                val ok = rep.contains("\"ok\":true")
+                dao.setStatus(dir, if (ok) "recovered" else "unrecoverable")
+                if (ok) packBundle(File(dir))   // recovered scans get the same single zip as a normal Finish
                 dir to rep
             }
         }
+
+        /** [BundleArchive.packAndReplace] with the failure logged; null (folder kept) when the bundle could not be packed. */
+        private fun packBundle(dir: File): File? = BundleArchive.packAndReplace(dir) { Log.w(TAG, "not packed, keeping the folder ${dir.name}: ${it.message}") }
 
         /** Slot planes -> NV21 in [out] (w*h*3/2 bytes); reads the slot's Y via a duplicate so its position is untouched. */
         private fun toNv21(s: Slot, out: ByteArray) {

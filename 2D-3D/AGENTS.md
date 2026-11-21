@@ -5,8 +5,7 @@ One phase per session, in order. Phase N+1 starts only after Phase N acceptance 
 Numeric thresholds in phase files are starting guesses: tune on recorded data.
 
 ## A. Role and context
-**This entire repository (2D-3D) is Part 1 only.** Part 2 lives in a separate repository
-(`roomscan-recon`); never add Part 2 code, plans or phases here.
+**This entire repository (2D-3D) is Part 1 only.** Part 2 lives in the sibling directory `../roomscan-recon` of the SCENELY monorepo; never add Part 2 code, plans or phases here.
 The program has exactly TWO parts (docs/program-spec/README.md). The old nine-project split (A–I) is
 superseded; never plan from docs/program-spec/legacy-nine-projects/.
 - **Part 1 — Intelligent Room Capture (Mobile App)** = this whole repo (code in `capturekit/`). Native iOS + Android app

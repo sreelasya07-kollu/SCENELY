@@ -40,8 +40,8 @@ class TusUploader(
         data class Failed(val reason: String) : Outcome()  // CORRUPT after repair: user-visible failure
     }
 
-    private fun uploadFile(bundle: File, rel: String, bundleId: String, fresh: Boolean) {
-        val f = File(bundle, rel)
+    /** One tus upload of [f]; [rel] is the metadata `path` (the file's place in the bundle, or [UploadPlan.ARCHIVE_PATH] for a whole zip). */
+    private fun uploadFile(f: File, rel: String, bundleId: String, fresh: Boolean) {
         val up = TusUpload(f).apply {
             metadata = mapOf("bundle_id" to bundleId, "path" to rel, "sha256" to UploadPlan.sha256(f), "filename" to f.name)
         }
@@ -64,10 +64,17 @@ class TusUploader(
 
     /** Runs the whole upload. IOExceptions (offline, server restart) surface as Retry. */
     fun uploadBundle(bundle: File, waitMs: Long = 30_000): Outcome = try {
-        val id = UploadPlan.bundleId(File(bundle, UploadPlan.MANIFEST).readText()) ?: return Outcome.Failed("manifest has no bundle_id")
-        val files = UploadPlan.order(bundle)
-        total = files.sumOf { File(bundle, it).length() }; doneBefore = 0L
-        files.forEach { uploadFile(bundle, it, id, fresh = false); doneBefore += File(bundle, it).length() }
+        val manifest = try { BundleArchive.manifestText(bundle) } catch (e: java.io.IOException) { return Outcome.Failed("cannot read the manifest: ${e.message}") }
+        val id = UploadPlan.bundleId(manifest) ?: return Outcome.Failed("manifest has no bundle_id")
+        if (BundleArchive.isArchive(bundle)) {
+            // A packed scan goes up as ONE upload (ADR 0040); the verifier checks the zip as a whole.
+            total = bundle.length(); doneBefore = 0L
+            uploadFile(bundle, UploadPlan.ARCHIVE_PATH, id, fresh = false)
+        } else {
+            val files = UploadPlan.order(bundle)
+            total = files.sumOf { File(bundle, it).length() }; doneBefore = 0L
+            files.forEach { uploadFile(File(bundle, it), it, id, fresh = false); doneBefore += File(bundle, it).length() }
+        }
         onProgress?.invoke(total, total)
         if (verifierUrl == null) Outcome.Complete else waitForVerdict(bundle, id, waitMs)
     } catch (e: java.io.IOException) {
@@ -84,11 +91,18 @@ class TusUploader(
             when {
                 s.status == "COMPLETE" -> return Outcome.Complete
                 s.status == "CORRUPT" && !repaired -> {
-                    repaired = true  // re-send damaged files once, manifest again last
-                    (s.corruptPaths.filter { it != UploadPlan.MANIFEST } + UploadPlan.MANIFEST).forEach { uploadFile(bundle, it, id, fresh = true) }
+                    repaired = true
+                    if (BundleArchive.isArchive(bundle)) {
+                        // the zip is the only upload: send it again from scratch once
+                        if (UploadPlan.ARCHIVE_PATH in s.corruptPaths) uploadFile(bundle, UploadPlan.ARCHIVE_PATH, id, fresh = true)
+                    } else {  // re-send damaged files once, manifest again last
+                        (s.corruptPaths.filter { it != UploadPlan.MANIFEST } + UploadPlan.MANIFEST).forEach { uploadFile(File(bundle, it), it, id, fresh = true) }
+                    }
                 }
                 s.status == "CORRUPT" -> return Outcome.Failed(s.reason)
-                s.status == "INCOMPLETE" -> s.missing.forEach { uploadFile(bundle, it, id, fresh = true) }
+                s.status == "INCOMPLETE" ->
+                    if (BundleArchive.isArchive(bundle)) { if (s.missing.isNotEmpty()) uploadFile(bundle, UploadPlan.ARCHIVE_PATH, id, fresh = true) }
+                    else s.missing.forEach { uploadFile(File(bundle, it), it, id, fresh = true) }
             }
             if (System.currentTimeMillis() > end) return Outcome.Retry("server status ${s.status}: ${s.reason}")
             Thread.sleep(500)

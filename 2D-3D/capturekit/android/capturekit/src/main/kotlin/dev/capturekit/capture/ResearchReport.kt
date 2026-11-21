@@ -75,7 +75,8 @@ object ResearchReport {
     )
 
     /** Sibling file of a bundle directory (same parent, never a child). */
-    fun fileFor(bundleDir: File): File = File(bundleDir.absoluteFile.parentFile, bundleDir.name + ".research.json")
+    fun fileFor(bundleDir: File): File =
+        dev.capturekit.upload.BundleArchive.dirOf(bundleDir).let { File(it.absoluteFile.parentFile, it.name + ".research.json") }   // keyed by the folder name, also for scan_x.zip
 
     /** True for the research file (or its temp file) of a bundle: not a bundle, skip it when listing a bundles directory. */
     fun isResearchFile(name: String) = name.endsWith(".research.json") || name.endsWith(".research.json.tmp")

@@ -395,3 +395,154 @@ def test_pending_validation_is_started_in_the_background_once(tmp_path):
         time.sleep(0.05)
     assert v.check("b1").server_validation["verdict"] == "PASS" and len(calls) == 1
     assert v.start_validation("b1") is False  # result cached: nothing to start
+
+
+# ---- one bundle.zip upload (issue #10 stage 2, ADR 0040) ---------------------------------------
+
+
+def _frozen_zip(tmp: Path, tamper: str | None = None) -> bytes:
+    """The frozen example packed with ckit's own packer. Only what its manifest lists goes in (the
+    example folder also holds README.md and SHA256SUMS). ``tamper``: flip a byte of that entry."""
+    import shutil
+    import tempfile
+    import zipfile
+
+    from ckit.bundle.archive import pack_bundle
+
+    work = Path(tempfile.mkdtemp(dir=tmp))
+    folder = work / "scan_frozen"
+    folder.mkdir()
+    man = json.loads((FROZEN / "manifest.json").read_text())
+    for e in man["files"]:
+        (folder / e["path"]).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(FROZEN / e["path"], folder / e["path"])
+    shutil.copy(FROZEN / "manifest.json", folder / "manifest.json")
+    packed = pack_bundle(folder).archive
+    if tamper is None:
+        return packed.read_bytes()
+    bad = work / "tampered.zip"
+    with zipfile.ZipFile(packed) as src, zipfile.ZipFile(bad, "w") as out:
+        for info in src.infolist():
+            data = src.read(info.filename)
+            if info.filename == tamper:
+                data = bytes([data[0] ^ 0xFF]) + data[1:]
+            out.writestr(info, data)
+    return bad.read_bytes()
+
+
+@pytest.fixture
+def zenv(env):
+    if not FROZEN.exists():
+        pytest.skip("frozen-1.0.0 example not present")
+    return env
+
+
+def test_zip_upload_is_complete(zenv, tmp_path):
+    f, v = zenv
+    f.put("bundle.zip", _frozen_zip(tmp_path))
+    s = v.check("b1")
+    assert s.status == "COMPLETE", s.reason
+    assert "manifest.json" in s.received and "keyframes/000000.jpg" in s.received
+    assert s.corrupt == [] and s.missing == []
+    assert s.verdict == json.loads((FROZEN / "manifest.json").read_text()).get("validation")
+
+
+def test_zip_with_a_wrong_declared_sha_is_corrupt(zenv, tmp_path):
+    f, v = zenv
+    f.put("bundle.zip", _frozen_zip(tmp_path), declared=b"what the phone thought it sent")
+    s = v.check("b1")
+    assert s.status == "CORRUPT"
+    assert [c["path"] for c in s.corrupt] == ["bundle.zip"] and "uploader" in s.corrupt[0]["reason"]
+
+
+def test_zip_with_a_tampered_entry_is_corrupt(zenv, tmp_path):
+    f, v = zenv
+    f.put("bundle.zip", _frozen_zip(tmp_path, tamper="keyframes/000000.jpg"))  # sha matches
+    s = v.check("b1")
+    assert s.status == "CORRUPT"
+    assert s.corrupt[0]["path"] == "bundle.zip" and "keyframes/000000.jpg" in s.corrupt[0]["reason"]
+    assert v.open_listed("b1", "keyframes/000000.jpg") is None  # a corrupt zip serves nothing
+
+
+def test_truncated_zip_upload_is_pending(zenv, tmp_path):
+    f, v = zenv
+    data = _frozen_zip(tmp_path)
+    f.put("bundle.zip", data, complete=False, cut=len(data) // 2)
+    s = v.check("b1")
+    assert s.status == "PENDING" and "bundle.zip" in s.reason
+
+
+def test_open_listed_serves_entries_out_of_the_zip(zenv, tmp_path):
+    f, v = zenv
+    f.put("bundle.zip", _frozen_zip(tmp_path))
+    assert v.check("b1").status == "COMPLETE"
+    body, size = v.open_listed("b1", "keyframes/000000.jpg")
+    with body:
+        data = body.read()
+    want = (FROZEN / "keyframes" / "000000.jpg").read_bytes()
+    assert data == want and size == len(want)
+    body, _ = v.open_listed("b1", "manifest.json")
+    with body:
+        assert body.read() == (FROZEN / "manifest.json").read_bytes()
+    assert v.open_listed("b1", "../etc/passwd") is None
+    assert v.open_listed("b1", "README.md") is None  # not an entry of the zip
+
+
+def test_zip_server_validation_passes(real_env):
+    f, v, tmp = real_env
+    f.put("bundle.zip", _frozen_zip(tmp))
+    assert v.check("real").server_validation is None
+    v.validate("real")  # extract_archive into a temp dir, then the semantic validator
+    s = v.check("real")
+    assert s.status == "COMPLETE", s.reason
+    assert s.server_validation["verdict"] in ("PASS", "WARN"), s.server_validation
+    assert not [i for i in s.server_validation["issues"] if i["severity"] == "ERROR"]
+
+
+def test_a_zip_reupload_replaces_the_previous_result(zenv, tmp_path):
+    f, v = zenv
+    f.put("bundle.zip", _frozen_zip(tmp_path, tamper="camera.json"))
+    assert v.check("b1").status == "CORRUPT"
+    f.put("bundle.zip", _frozen_zip(tmp_path))  # the phone re-sends the zip
+    s = v.check("b1")
+    assert s.status == "COMPLETE" and s.corrupt == []
+    body, _ = v.open_listed("b1", "camera.json")
+    with body:
+        assert body.read() == (FROZEN / "camera.json").read_bytes()
+    f.put("bundle.zip", _frozen_zip(tmp_path, tamper="streams.mcap"))
+    assert v.check("b1").status == "CORRUPT"  # the newest zip is the one that counts
+    assert v.open_listed("b1", "camera.json") is None
+
+
+def test_a_newer_manifest_upload_wins_over_an_older_zip(zenv, tmp_path):
+    f, v = zenv
+    f.put("bundle.zip", _frozen_zip(tmp_path))
+    for p, d in FILES.items():
+        f.put(p, d)
+    f.manifest(FILES)  # the per-file path, newer than the zip
+    s = v.check("b1")
+    assert s.status == "COMPLETE" and s.reason.endswith("files verified")
+    assert "bundle.zip" in s.received and "manifest.json" in s.received  # per-file listing
+    body, _ = v.open_listed("b1", "camera.json")  # served from the per-file upload
+    with body:
+        assert body.read() == FILES["camera.json"]
+
+
+def test_zip_copies_are_bounded_and_removed_with_the_verifier(tmp_path):
+    import gc
+    import os
+
+    if not FROZEN.exists():
+        pytest.skip("frozen-1.0.0 example not present")
+    store = tmp_path / "store"
+    store.mkdir()
+    f = Fake(store, "b1")
+    v = Verifier(DirStore(store))
+    for i in range(4):  # four different zips of one bundle: only the newest copies stay on disk
+        f.put("bundle.zip", _frozen_zip(tmp_path, tamper="camera.json" if i % 2 else None))
+        v.check("b1")
+    zdir = v._zip_dir
+    assert zdir and len(os.listdir(zdir)) <= Verifier.ZIP_COPIES_KEPT
+    del v
+    gc.collect()
+    assert not os.path.exists(zdir)

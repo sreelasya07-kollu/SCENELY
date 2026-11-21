@@ -2,7 +2,7 @@
 > [04-TASKS.md](04-TASKS.md); status lives in [PROGRESS.md](../PROGRESS.md); scope lives in
 > the charter ([README.md](README.md) maps who owns what).
 
-# Implementation plan: roomscan-recon (Part 3 `spatial/`, Part 4 `recon/`)
+# Implementation plan: roomscan-recon (Part 2: `spatial/` stage, `recon/` stage)
 
 Written 2026-11-14 from PROGRESS.md, HANDOFF.md §5, runs/test_results and the Part 2 build
 guide. Status words: **done** = measured evidence in runs/test_results; **partial** = code
@@ -19,7 +19,7 @@ exists, acceptance not fully met; **missing** = no code.
 | P4 fusion | partial | bench_phase3 (Replica Chamfer) | ETH3D eval-tool F-score never computed (needs MVS or usable mono depth); synthetic Chamfer ≤ 1 cm not asserted as a test |
 | P5 planes + room | done | phase5_*.json | ETH3D floor⟂wall check blocked (no gravity); bays/recesses via wall-snapped footprint contour (synthetic L and recess tested, Replica room0 not re-run); scale_confidence null |
 | P6 SpatialMap writer | missing | – | – |
-| P7–P10 Part 4 (`recon/`) | missing | `recon/__init__.py` only | all of sparse export, OpenMVS dense/mesh/texture, gsplat, packaging |
+| P7–P10 Part 2 recon stage (`recon/`) | missing | `recon/__init__.py` only | all of sparse export, OpenMVS dense/mesh/texture, gsplat, packaging |
 | Reports | missing | docs/PHASE_REPORTS empty | no per-phase report has been written |
 | Version control | **missing** | not a git repo | nothing is committed; one bad `rm` loses everything |
 
@@ -83,7 +83,7 @@ Goal: a depth path that works without a depth sensor, and scale from depth.
 - Tests: schema-valid; rerun with the same seed gives identical hashes for deterministic
   files; a `formats`-only reader loads it (this is what `recon/` will use).
 
-### P7: Part 4 sparse — 3 days, CPU
+### P7: Part 2 recon stage sparse — 3 days, CPU
 - `recon/sparse.py`: load SpatialMap COLMAP model, or run SfM if absent; export
   `InterfaceCOLMAP` scene for OpenMVS and the gsplat init cloud.
 - Test: ETH3D office **≥ 95 % registered, reproj < 1.0 px**, scene.mvs loads in docker.
@@ -118,7 +118,7 @@ with commands; run them in its priority order.
 These are the "glue" the guide says nobody ships. Do them after P10, in this order:
 1. **Scan Bundle adapter + validator** (guide stage 0): blocked on the CaptureKit spec. Write
    a v0.1 proposal (`manifest.json`, frames, depth, poses, IMU, checksums, three capture
-   tiers) with a JSON Schema and one synthetic sample bundle per tier, so Part 3 can be
+   tiers) with a JSON Schema and one synthetic sample bundle per tier, so Part 2 spatial stage can be
    tested on it before real captures exist.
 2. **QA gate + Job Report** (guide stage 9, spec D-ScanQA): pose quality, coverage per plane
    (observation count per `planes.json` polygon), geometry checks (wall planarity `rms_m`,

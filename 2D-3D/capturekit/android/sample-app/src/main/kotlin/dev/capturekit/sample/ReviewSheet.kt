@@ -2,19 +2,17 @@ package dev.capturekit.sample
 
 import android.app.Activity
 import android.app.Dialog
-import android.graphics.Color
-import android.graphics.Typeface
+import android.os.Build
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
-import android.widget.TextView
+import android.widget.ScrollView
 import dev.capturekit.capture.CoreEvent
 import dev.capturekit.guidance.Completeness
 import dev.capturekit.guidance.ObjectSummary
 import dev.capturekit.guidance.ScanStateSnapshot
 import dev.capturekit.sample.UiKit.dp
-import kotlin.math.max
 
 /**
  * Review-before-finish sheet. Shown after the core is paused and before finalize: the completeness % and the weak zones
@@ -52,62 +50,73 @@ object ReviewSheet {
              onGaps: () -> Unit, onFinish: () -> Unit): Dialog {
         val weak = if (guidance) weakWalls(o) else emptyList()
         val empty = nothingFound(o)
-
-        val dlg = Dialog(act)
-        fun text(t: String, sp: Float, bold: Boolean = false) = TextView(act).apply {
-            this.text = t; textSize = sp; setTextColor(Color.WHITE)
-            if (bold) typeface = Typeface.DEFAULT_BOLD
-        }
         val gapsText = if (empty) "Nothing of the room was captured yet." else if (weak.isEmpty()) "All evidenced walls meet coverage targets." else
             "Needs more scanning: " + weak.joinToString(", ") { "Wall $it" } + "."
-        val handle = View(act).apply {
-            background = UiKit.rounded(0x4DFFFFFF, act.dp(3).toFloat())
-        }
-
         val found = if (!detector) "" else o?.let { ObjectSummary.text(it.objects, it.openings) }.orEmpty()   // issue #2 D: what was recognised so far
-        val root = LinearLayout(act).apply {
-            orientation = LinearLayout.VERTICAL
-            background = UiKit.card(act, 28)
-            setPadding(act.dp(24), act.dp(16), act.dp(24), act.dp(24))
+        val wrap = ViewGroup.LayoutParams.WRAP_CONTENT
+        val match = ViewGroup.LayoutParams.MATCH_PARENT
+        var dlg: Dialog? = null
 
-            // Top drag handle
-            addView(handle, LinearLayout.LayoutParams(act.dp(40), act.dp(5)).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                bottomMargin = act.dp(16)
-            })
-
-            addView(text("Before you finish", 22f, true))
-            addView(text("Complete: ${summary.completenessPct}%", UiKit.TEXT_M, true), LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = act.dp(10) })
-            addView(text(gapsText, UiKit.TEXT_M).apply {
-                setTextColor(if (empty || weak.isNotEmpty()) UiKit.AMBER else 0xFFB0BEC5.toInt())
-                contentDescription = "Complete ${summary.completenessPct} percent. $gapsText"
-            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = act.dp(6) })
-            for (z in summary.weakZones.take(5)) addView(text("\u2022 ${z.text}", UiKit.TEXT_S).apply { setTextColor(0xFFCFD8DC.toInt()) },
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = act.dp(3) })
-            if (found.isNotEmpty()) addView(text("Found: $found.", UiKit.TEXT_M).apply {
-                setTextColor(0xFFCFD8DC.toInt())
-            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = act.dp(6) })
-
-            val btns = LinearLayout(act).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+        // Completeness ring beside the headline numbers; the text carries the whole message for screen readers.
+        val summaryRow = LinearLayout(act).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val ring = UiKit.progressRing(act).apply {
+                setProgress(summary.completenessPct / 100f)
+                accent = if (empty || weak.isNotEmpty()) UiKit.AMBER else UiKit.ACCENT
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
-            btns.addView(UiKit.secondaryButton(act, "Finish anyway").apply {
-                textSize = 16f
-                setOnClickListener { dlg.dismiss(); onFinish() }
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-
-            btns.addView(UiKit.bigButton(act, if (empty) "Keep scanning" else "Scan the gaps", UiKit.BLUE_ACCENT).apply {
-                textSize = 16f
-                setOnClickListener { dlg.dismiss(); onGaps() }
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.4f).apply { marginStart = act.dp(12) })
-
-            addView(btns, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = act.dp(20) })
+            addView(ring, LinearLayout.LayoutParams(wrap, wrap).apply { rightMargin = act.dp(DesignTokens.SP_16) })
+            addView(LinearLayout(act).apply {
+                orientation = LinearLayout.VERTICAL
+                contentDescription = "Complete ${summary.completenessPct} percent. $gapsText"
+                addView(UiKit.role(act, "Complete: ${summary.completenessPct}%", DesignTokens.TITLE_MEDIUM))
+                addView(UiKit.role(act, gapsText, DesignTokens.BODY_MEDIUM, if (empty || weak.isNotEmpty()) UiKit.AMBER else UiKit.LABEL_2),
+                    LinearLayout.LayoutParams(wrap, wrap).apply { topMargin = act.dp(DesignTokens.SP_4) })
+            }, LinearLayout.LayoutParams(0, wrap, 1f))
         }
-        dlg.window?.setBackgroundDrawableResource(android.R.color.transparent)
-        dlg.setContentView(root)
-        dlg.setCancelable(false)   // the scan is paused: the only ways out are the two buttons
-        dlg.show()
-        return dlg
+
+        fun noteRow(icon: Int, tint: Int, text: String) = LinearLayout(act).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(UiKit.iconImage(act, icon, tint), LinearLayout.LayoutParams(act.dp(16), act.dp(16)).apply { rightMargin = act.dp(DesignTokens.SP_12) })
+            addView(UiKit.role(act, text, DesignTokens.BODY_MEDIUM, UiKit.LABEL_2), LinearLayout.LayoutParams(0, wrap, 1f))
+        }
+
+        val body = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(summaryRow)
+            for (z in summary.weakZones.take(5)) addView(noteRow(R.drawable.ic_warning, UiKit.AMBER, z.text),
+                LinearLayout.LayoutParams(match, wrap).apply { topMargin = act.dp(DesignTokens.SP_12) })
+            if (found.isNotEmpty()) addView(noteRow(R.drawable.ic_boxes, UiKit.ACCENT, "Found: $found."),
+                LinearLayout.LayoutParams(match, wrap).apply { topMargin = act.dp(DesignTokens.SP_12) })
+        }
+
+        val buttons = LinearLayout(act).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            addView(UiKit.secondaryButton(act, "Finish anyway").apply {
+                setOnClickListener { dlg?.dismiss(); onFinish() }
+            }, LinearLayout.LayoutParams(0, wrap, 1f))
+            addView(UiKit.bigButton(act, if (empty) "Keep scanning" else "Scan the gaps").apply {
+                setOnClickListener { UiKit.haptic(this, true); dlg?.dismiss(); onGaps() }
+            }, LinearLayout.LayoutParams(0, wrap, 1.4f).apply { marginStart = act.dp(DesignTokens.SP_12) })
+        }
+
+        val content = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(UiKit.role(act, "Before you finish", DesignTokens.HEADLINE_SMALL).apply {
+                if (Build.VERSION.SDK_INT >= 28) isAccessibilityHeading = true
+            }, LinearLayout.LayoutParams(match, wrap).apply { bottomMargin = act.dp(DesignTokens.SP_16) })
+            // Landscape is short: the body scrolls while the two buttons stay in view.
+            addView(ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(body) }, LinearLayout.LayoutParams(match, 0, 1f))
+            addView(buttons, LinearLayout.LayoutParams(match, wrap).apply { topMargin = act.dp(DesignTokens.SP_24) })
+        }
+
+        // The scan is paused: the only ways out are the two buttons, so the sheet is not cancelable.
+        val sheet = UiKit.sheet(act, content, cancelable = false)
+        dlg = sheet
+        sheet.show()
+        return sheet
     }
 }

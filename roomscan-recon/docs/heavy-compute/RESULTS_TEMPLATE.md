@@ -29,7 +29,7 @@ Machine: `python scripts/heavy/check_machine.py > machine.txt` (attach). Each ro
 | P3-12 | Phase 3 GPU tests: CUDA fusion + GPU inference parity with CPU |  |  |  |  |  |  |  |  |
 | P4-01 | Planes + room geometry on 2M / 5M / 20M point clouds vs < 30 s target |  |  |  |  |  |  |  |  |
 | P4-02 | Full Phase 4 eval suite on every real scene + tape-measured rooms; parameter-frozen final run |  |  |  |  |  |  |  |  |
-| P6-01 | Part 4 sparse reconstruction without priors on all eval scenes |  |  |  |  |  |  |  |  |
+| P6-01 | Part 2 recon stage sparse reconstruction without priors on all eval scenes |  |  |  |  |  |  |  |  |
 | P6-02 | Cache/hash behaviour on large runs (skip on re-run, partial re-run after one stage change) |  |  |  |  |  |  |  |  |
 | P7-01 | COLMAP patch_match_stereo + stereo_fusion (CUDA-only), full res |  |  |  |  |  |  |  |  |
 | P7-02 | OpenMVS DensifyPointCloud (CPU, RAM-heavy) full + half res |  |  |  |  |  |  |  |  |

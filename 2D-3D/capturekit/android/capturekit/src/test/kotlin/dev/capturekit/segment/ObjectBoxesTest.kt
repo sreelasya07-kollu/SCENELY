@@ -30,7 +30,7 @@ class ObjectBoxesTest {
     }
     private val none: (FloatArray, FloatArray) -> Vec3? = { _, _ -> null }
 
-    @Test fun aSegmentedObjectGetsASolidGreenBoxWithLabelAndId() {
+    @Test fun aSegmentedObjectGetsASolidBoxWithLabelAndId() {
         val t = LiveObjectTracker()
         t.apply(chair(chairAt), 1000, hitAt(chairAt))
         val boxes = t.drawBoxes(cam, 1100)
@@ -138,5 +138,32 @@ class ObjectBoxesTest {
         t.apply(chair(chairAt), 1000, hitAt(chairAt))
         t.clear()
         assertTrue(t.objects(1000).isEmpty()); assertFalse(t.any)
+    }
+
+    @Test fun anObjectIsScannedAfterEnoughSightingsWithA3dPosition() {
+        val t = LiveObjectTracker()
+        for (k in 1 until LiveObjectTracker.SCANNED_MIN_SIGHTINGS) {
+            t.apply(chair(chairAt, cam, k.toLong()), 1000L + k * 200, hitAt(chairAt))
+            assertFalse(t.objects(1000L + k * 200).single().scanned)
+            assertFalse(t.drawBoxes(cam, 1000L + k * 200).single().scanned)
+        }
+        val n = LiveObjectTracker.SCANNED_MIN_SIGHTINGS
+        t.apply(chair(chairAt, cam, n.toLong()), 1000L + n * 200, hitAt(chairAt))
+        assertEquals(n, t.objects(1000L + n * 200).single().seenCount)
+        assertTrue(t.objects(1000L + n * 200).single().scanned)
+        assertTrue(t.drawBoxes(cam, 1000L + n * 200).single().scanned)
+        // Still scanned once it is only remembered.
+        val remembered = t.drawBoxes(cam, 60_000).single()   // the centre is still in view, so a remembered (dashed) box is drawn
+        assertFalse(remembered.solid); assertTrue(remembered.scanned)
+        assertTrue(t.objects(60_000).single().scanned)
+    }
+
+    @Test fun anObjectWithoutA3dPositionIsNeverScanned() {
+        val t = LiveObjectTracker()
+        for (k in 1..LiveObjectTracker.SCANNED_MIN_SIGHTINGS + 2) t.apply(chair(null, cam, k.toLong()), 1000L + k * 100, none)
+        val o = t.objects(1600).single()
+        assertNull(o.centreWorld); assertTrue(o.seenCount >= LiveObjectTracker.SCANNED_MIN_SIGHTINGS)
+        assertFalse(o.scanned)
+        assertFalse(t.drawBoxes(cam, 1600).single().scanned)
     }
 }
