@@ -27,15 +27,6 @@ public enum CaptureSessionError: Error, Equatable {
     case alreadyStarted
 }
 
-/// One camera frame handed to the live segmentation (ADR 0035/0037): a private copy of the captured image (never an ARFrame),
-/// the camera that took it and the quarter turns (clockwise) that make it upright on screen.
-public struct SegmentationFrame {
-    public let pixelBuffer: CVPixelBuffer
-    public let camera: CameraSnapshot
-    public let tNs: Int64
-    public let quarterTurns: Int
-}
-
 /// Owns one ck_session. Callbacks only copy into the core's bounded queues (never block ARKit's
 /// delegate queue); keyframe JPEGs are encoded on a serial queue; ARKit frames are not retained.
 ///

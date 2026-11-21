@@ -32,14 +32,15 @@ class ResultsActivity : Activity() {
     private lateinit var body: LinearLayout
     private lateinit var plan: WebView
     private lateinit var planHolder: FrameLayout
-    private var generation = 0
-    private var planLoadedFor: String? = null
+    @Volatile private var generation = 0
+    @Volatile private var planLoadedFor: String? = null
     @Volatile private var visible = false
     private var bundleId = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         bundleId = intent.getStringExtra(EXTRA_BUNDLE_ID).orEmpty()
+        if (bundleId.isBlank()) { Toast.makeText(this, "This scan has no id, so there are no results to show.", Toast.LENGTH_LONG).show(); finish(); return }
         body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         plan = WebView(this).apply { setBackgroundColor(Color.WHITE); contentDescription = "Floor plan" }
         planHolder = FrameLayout(this).apply {
@@ -61,6 +62,7 @@ class ResultsActivity : Activity() {
     override fun onResume() {
         super.onResume()
         visible = true
+        if (bundleId.isBlank()) return
         startLoop()
     }
 
@@ -70,23 +72,28 @@ class ResultsActivity : Activity() {
     }
 
     override fun onDestroy() {
-        plan.destroy()
+        if (::plan.isInitialized) plan.destroy()
         super.onDestroy()
     }
 
     /** Fetches on a worker thread; repeats every 5 s while the job is queued or running and the screen is visible. */
     private fun startLoop() {
         val gen = ++generation
+        var lastGoodActive = false   // last good answer said the job is still running: a failed fetch must not stop the polling
+        var haveGood = false
         Thread {
             while (visible && gen == generation) {
                 val f = ResultsGate.status(bundleId)
                 val job = f.text?.let { JobStatus.parse(it) }
                 val svg = job?.file("floorplan_svg")?.takeIf { it.url != planLoadedFor }?.let { it to ResultsGate.fetchText(it.url).text }
+                val showError = !haveGood
                 runOnUiThread {
                     if (isDestroyed || gen != generation) return@runOnUiThread
-                    if (job == null) message(f.error ?: "The server sent an answer this app does not understand.") else render(job, svg)
+                    if (job != null) render(job, svg)
+                    else if (showError) message(f.error ?: "The server sent an answer this app does not understand.")
                 }
-                if (job == null || !job.isActive) break
+                if (job != null) { haveGood = true; lastGoodActive = job.isActive }
+                if (!lastGoodActive) break
                 try { Thread.sleep(5000) } catch (e: InterruptedException) { break }
             }
         }.start()
@@ -208,7 +215,9 @@ class ResultsActivity : Activity() {
         val group = UiKit.group(this)
         for (f in job.files) {
             group.addView(UiKit.listRow(this, null, f.name, UiKit.humanSize(f.size), chevron = true) {
-                try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ResultsGate.absoluteUrl(f.url)))) }
+                val abs = ResultsGate.absoluteUrl(f.url)
+                if (abs == null) { Toast.makeText(this, "This link is not from the results server.", Toast.LENGTH_SHORT).show(); return@listRow }
+                try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(abs))) }
                 catch (e: ActivityNotFoundException) { Toast.makeText(this, "No app can open this file.", Toast.LENGTH_SHORT).show() }
             })
         }

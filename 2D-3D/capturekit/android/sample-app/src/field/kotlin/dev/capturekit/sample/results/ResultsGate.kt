@@ -4,6 +4,7 @@ import dev.capturekit.sample.BuildConfig
 import java.io.FileNotFoundException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 
 /**
  * Field flavour only (needs BuildConfig.JOBS_URL and the INTERNET permission). Talks to the roomscan-recon job
@@ -15,16 +16,21 @@ object ResultsGate {
     private val base: String get() = BuildConfig.JOBS_URL.trimEnd('/')
 
     /** Absolute URL for a server-relative path such as "/jobs/<id>/files/x"; absolute URLs pass through. */
-    fun absoluteUrl(rel: String): String = if (rel.startsWith("http://") || rel.startsWith("https://")) rel else base + (if (rel.startsWith("/")) rel else "/$rel")
+    fun absoluteUrl(rel: String): String? {
+        if (rel.startsWith("http://") || rel.startsWith("https://")) return if (rel.startsWith("$base/")) rel else null
+        return base + (if (rel.startsWith("/")) rel else "/$rel")
+    }
+
+    private fun seg(id: String): String = URLEncoder.encode(id, "UTF-8").replace("+", "%20")
 
     /** GET /jobs/<id>; on 404 asks the server to start the job (POST /jobs, idempotent) and reads it again. */
     fun status(bundleId: String): Fetched {
         if (!available) return Fetched(null, "The results server is not set up in this build.")
         return try {
-            val first = try { get("$base/jobs/$bundleId") } catch (e: FileNotFoundException) { null }
+            val first = try { get("$base/jobs/${seg(bundleId)}") } catch (e: FileNotFoundException) { null }
             if (first != null) return Fetched(first, null)
             post("$base/jobs", """{"bundle_id":"${bundleId.replace("\\", "\\\\").replace("\"", "\\\"")}"}""")
-            Fetched(get("$base/jobs/$bundleId"), null)
+            Fetched(get("$base/jobs/${seg(bundleId)}"), null)
         } catch (e: FileNotFoundException) {
             Fetched(null, "The server does not know this scan yet. Upload it first.")
         } catch (e: java.io.IOException) {
@@ -36,7 +42,7 @@ object ResultsGate {
 
     /** Fetches a text file (for example the floor plan SVG) from a server-relative or absolute URL. */
     fun fetchText(rel: String): Fetched = try {
-        Fetched(get(absoluteUrl(rel)), null)
+        Fetched(get(absoluteUrl(rel) ?: return Fetched(null, "That file is not on the results server.")), null)
     } catch (t: Throwable) { Fetched(null, "Could not load the file.") }
 
     private fun open(url: String, method: String): HttpURLConnection =

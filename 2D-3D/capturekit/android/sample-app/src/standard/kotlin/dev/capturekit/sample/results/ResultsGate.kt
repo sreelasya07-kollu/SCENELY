@@ -4,7 +4,7 @@ package dev.capturekit.sample.results
 @Suppress("UNUSED_PARAMETER")
 object ResultsGate {
     val available: Boolean get() = false
-    fun absoluteUrl(rel: String): String = rel
+    fun absoluteUrl(rel: String): String? = null
     fun status(bundleId: String): Fetched = Fetched(null, "Results are not available in this build.")
     fun fetchText(rel: String): Fetched = Fetched(null, "Results are not available in this build.")
 }
