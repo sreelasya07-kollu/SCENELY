@@ -8,9 +8,9 @@ import LiteRT
 /// copied into the app bundle (ios/README.md). The model card says baked large constants mis-execute on the ML Drift GPU delegate,
 /// so clspos / pospatch / query_feat are fed as inputs.
 ///
-/// UNVERIFIED until a device run (Mac/iPhone checks): that LiteRT-Swift 2.3.0 Metal executes these graphs, that `TensorBuffer.write`
-/// throws on a wrong float count (input slots are found by offering each candidate array, largest first, like the Android code),
-/// the proposal cell order (row-major assumed) and latency. Single-threaded: `segment` runs on the segmentation queue only.
+/// Input slots are found by each buffer's float count (`TensorBuffer.size`, packed bytes / 4; LiteRT-Swift 2.3.0), like the Android
+/// code; write-probing is only the fallback. UNVERIFIED until a device run (Mac/iPhone checks): that LiteRT-Swift 2.3.0 Metal
+/// executes these graphs, that `size` is the float32 byte count of these buffers, the proposal cell order (row-major assumed) and latency. Single-threaded: `segment` runs on the segmentation queue only.
 public final class RfDetrSegmenter: Segmenter {
     public static let graphA = "rfdetrseg_graphA_fp16.tflite"
     public static let graphB = "rfdetrseg_graphB_fp16.tflite"
@@ -96,9 +96,13 @@ public final class RfDetrSegmenter: Segmenter {
         return RfDetr.loadFloats([UInt8](d), count: count)
     }
 
-    /// Slot of each candidate array among `bufs`: every buffer is offered the candidates largest first and keeps the first one it
-    /// accepts (a write of the wrong float count throws). Nil when a candidate found no slot.
+    /// Slot of each candidate array among `bufs`, from each buffer's own size (`TensorBuffer.size` = packed bytes; float32 tensors)
+    /// through `RfDetr.resolveSlots` (host-tested). Only when the sizes do not match (e.g. fp16 I/O) it falls back to offering each
+    /// candidate, largest first, until one write is accepted (a write of the wrong size throws). Nil when a candidate found no slot.
     private static func bind(_ bufs: [TensorBuffer], _ cands: [[Float]]) -> [Int]? {
+        let counts = bufs.map { $0.size / MemoryLayout<Float>.stride }
+        if let slots = RfDetr.resolveSlots(bufferCounts: counts, wanted: cands.map { $0.count }) { return slots }
+        NSLog("CK/Segment: buffer float counts %@ do not match the expected sizes: probing by write", String(describing: counts))
         var slot = [Int](repeating: -1, count: cands.count)
         let bySize = cands.indices.sorted { cands[$0].count > cands[$1].count }
         for (bi, b) in bufs.enumerated() {
