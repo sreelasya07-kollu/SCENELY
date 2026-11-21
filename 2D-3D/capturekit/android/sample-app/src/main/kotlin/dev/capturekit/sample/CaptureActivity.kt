@@ -198,15 +198,44 @@ class CaptureActivity : Activity(), SessionManager.Listener {
      * Start pressed: with voice commands on, ask for the microphone first (rationale), then begin; a refusal only turns
      * voice commands off. With them off (default, ADR 0032) there is no microphone request.
      */
-    private fun start() { val v = voice; if (v != null) v.ensurePermissionThen { startScan() } else startScan() }
+    private fun start() {
+        startBlockedReason()?.let { showStartBlocked(it); return }
+        val v = voice
+        if (v != null) v.ensurePermissionThen { startScan() } else startScan()
+    }
+
+    private fun startBlockedReason(): String? {
+        if (recovering) return "Checking for interrupted sessions. Please wait."
+        if (calibNoSensors) return "This phone needs a gyroscope and accelerometer to start a scan."
+        if (ar.state != ArState.READY) return arMessage ?: "Waiting for camera tracking to start."
+
+        val c = calib
+        val state = CalibrationCard.ui(c == null && calibResult == null, if (calibResult != null) StillnessCalibrator.State.READY else c?.state)
+        if (!CalibrationCard.startAllowed(state, trackState)) {
+            val (headline, detail) = CalibrationCard.text(
+                state,
+                c?.progress ?: 0.0,
+                c?.needsTableHint(SystemClock.elapsedRealtimeNanos()) == true,
+                trackState,
+            )
+            return listOf(headline, detail).filter { it.isNotBlank() }.joinToString(". ")
+        }
+        return null
+    }
+
+    private fun showStartBlocked(reason: String) {
+        hud.setVoiceLine(reason)
+        ui.removeCallbacks(clearActionLine)
+        ui.postDelayed(clearActionLine, 3500L)
+    }
 
     /** Feature switches (ADR 0032): defaults everywhere, debug-build `setprop` overrides; see [Features]. */
     private val features: FeatureFlags.Flags by lazy { Features.get(this) }
 
     private fun startScan() {
         if (session != null || finishing) return
-        val calibration = calibResult
-        if (calibration == null) { hud.setBanner("Hold the phone still for a moment before starting.", UiKit.Kind.WARN); return }
+        startBlockedReason()?.let { showStartBlocked(it); return }
+        val calibration = calibResult ?: return
         // Consent keys (consent_version + consent_at + redaction_mode) are always passed together; no consent, no scan.
         val consentCfg = dev.capturekit.consent.ConsentStore.get(this).sessionConfig()
         if (consentCfg == null) {
@@ -421,7 +450,8 @@ class CaptureActivity : Activity(), SessionManager.Listener {
         val (head, sub) = CalibrationCard.text(ui, c?.progress ?: 0.0, c?.needsTableHint(SystemClock.elapsedRealtimeNanos()) == true, trackState)
         hud.setCoaching(head)
         hud.setDetail(sub.ifEmpty { recoveredNote })
-        hud.button.isEnabled = !recovering && CalibrationCard.startAllowed(ui, trackState)
+        hud.button.isEnabled = !recovering && !calibNoSensors && ar.state == ArState.READY
+        hud.button.contentDescription = startBlockedReason()?.let { "Start Scan. $it" } ?: "Start Scan"
     }
 
     private fun refresh() {

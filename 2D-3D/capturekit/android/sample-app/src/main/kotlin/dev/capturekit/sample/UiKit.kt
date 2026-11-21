@@ -529,6 +529,10 @@ class ShutterButton(ctx: Context) : Button(ctx) {
         val cx = width / 2f
         val cy = height / 2f
         val outerRadius = (min(width, height) / 2f) - dp(2f)
+        val enabled = isEnabled
+        outerPaint.color = if (enabled) 0xF2FFFFFF.toInt() else 0x663A4548
+        innerPaint.color = if (enabled) UiKit.RED else DesignTokens.OUTLINE
+        stopSquarePaint.color = if (enabled) UiKit.RED else DesignTokens.OUTLINE
 
         // Outer white camera ring
         canvas.drawCircle(cx, cy, outerRadius, outerPaint)
