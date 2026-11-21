@@ -131,7 +131,7 @@ items:
     phase: 2
     name: "Global SfM (GLOMAP, now COLMAP 4.x 'global' mapper) vs COLMAP incremental"
     status: partial
-    local_blocker: "Wrapped 2026-11-14: refine(mapper="global") / spatial.cli refine --mapper global. On ETH3D office (26 images) it registers 26/26 at 0.51 px but returns a geometrically wrong model (3.6 m Sim(3) residual vs incremental): experimental. Larger scenes and Replica not run (LONG_CPU)."
+    local_blocker: "Wrapped 2026-11-14: refine(mapper='global') / spatial.cli refine --mapper global. On ETH3D office (26 images) it registers 26/26 at 0.51 px but returns a geometrically wrong model (3.6 m Sim(3) residual vs incremental): experimental. Larger scenes and Replica not run (LONG_CPU)."
     req: [LONG_CPU]
     est: {vram_gb: 0, ram_gb: 16, disk_gb: 5, runtime: "TARGET TBD", basis: "ASSUMPTION"}
     datasets: [replica_full, eth3d_train_all]
@@ -357,12 +357,12 @@ items:
   - id: P6-01
     phase: 6
     name: "Part 4 sparse reconstruction without priors on all eval scenes"
-    status: not_implemented
-    local_blocker: "recon/ package is empty (only __init__.py)"
+    status: partial
+    local_blocker: "recon/sparse.py only hands an existing COLMAP model over to OpenMVS (check_scene reports registered / reproj); the no-prior SfM run (spatial.cli run --prior none) over all eval scenes has not been scripted or run at this scale"
     req: [LONG_CPU, GPU]
     est: {vram_gb: 4, ram_gb: 16, disk_gb: 10, runtime: "as P2-05", basis: "same SfM engine as Phase 2 (prior_mode none)"}
     datasets: [replica_full, eth3d_train_all]
-    command: "TODO (recon CLI)"
+    command: "TODO (no-prior SfM runner over all eval scenes; recon/sparse.py is the hand-over only)"
     outputs: []
     metrics: {record: [registered, reproj_px, ate_sim3], pass: "HANDOFF.md §5 P7: >= 95 % registered, reproj < 1.0 px"}
     priority: P1
@@ -401,7 +401,7 @@ items:
     req: [HIGH_RAM, LONG_CPU]
     est: {vram_gb: 0, ram_gb: 64, disk_gb: 30, runtime: "1-6 h per scene", basis: "ASSUMPTION; OpenMVS keeps depth maps for all views in memory during fusion"}
     datasets: [replica_full, eth3d_office]
-    command: "docker run --rm -v $PWD:/work room-openmvs:2.4.0 DensifyPointCloud scene.mvs --resolution-level 0|1   # wrapper TODO"
+    command: "uv run python -m recon.cli --spatial-map <sm> --out <dir> --resolution-level 0 --memory-gb 48 --splat no   # <dir> must not exist; --resolution-level 1 for half res; recon.cli wraps the room-openmvs:2.4.0 container (recon/dense.py); the 'run' subcommand is not accepted, T-030"
     outputs: []
     metrics: {record: [fscore_5cm, wall_s, peak_ram_gb], pass: "dense F@5cm >= 0.70 (HANDOFF.md §5 P8)"}
     priority: P1
@@ -414,7 +414,7 @@ items:
     req: [HIGH_RAM, LONG_CPU]
     est: {vram_gb: 0, ram_gb: 64, disk_gb: 10, runtime: "1-4 h", basis: "ASSUMPTION"}
     datasets: [replica_full, eth3d_office]
-    command: "TODO"
+    command: "uv run python -m recon.cli --spatial-map <sm> --out <dir> --resolution-level 0 --refine --memory-gb 48 --splat no   # same run as P7-02 plus RefineMesh; ReconstructMesh and TextureMesh run in both"
     outputs: []
     metrics: {record: [mesh_fscore_5cm, psnr_heldout, atlas_px], pass: "mesh F@5cm >= 0.65; textured held-out PSNR >= 18 dB (HANDOFF.md §5 P8, PROPOSED)"}
     priority: P1
@@ -435,12 +435,12 @@ items:
   - id: P8-01
     phase: 8
     name: "Gaussian Splatting full training (30k iters) per eval scene (gsplat)"
-    status: not_implemented
-    local_blocker: "trainer not written; gsplat CUDA kernels need NVIDIA GPU"
+    status: partial
+    local_blocker: "recon/splat/train.py (gsplat 1.5.3 trainer, SplatJob) exists and has NEVER been run: no NVIDIA GPU. The gpu test (tests/test_phase9_splat.py::test_splat_training_eth3d_half_res) trains 7000 steps at half resolution on the ETH3D SpatialMap runs/dev_p10_eth3d/spatial_map; the 30k-step runs on Replica / ARKitScenes SpatialMaps are not scripted"
     req: [GPU]
     est: {vram_gb: 16, ram_gb: 32, disk_gb: 5, runtime: "0.5-1.5 h per scene", basis: "ASSUMPTION: order of magnitude from gsplat/3DGS literature for 30k steps on one high-end GPU; not measured"}
     datasets: [replica_full, arkitscenes_2]
-    command: "TODO (recon/splat)"
+    command: "uv run pytest -m gpu tests/test_phase9_splat.py"
     outputs: []
     metrics: {record: [psnr, ssim, lpips, n_gaussians, peak_vram_gb, wall_s], pass: "held-out PSNR >= 24 dB, SSIM >= 0.80, LPIPS <= 0.30 (HANDOFF.md §5 P9, PROPOSED)"}
     priority: P1
@@ -449,7 +449,7 @@ items:
     phase: 8
     name: "Splat sanity benchmark: one Mip-NeRF 360 scene vs published numbers"
     status: not_implemented
-    local_blocker: "trainer not written; 12.5 GB dataset > free disk"
+    local_blocker: "trainer exists (recon/splat/train.py) but is unrun; it reads a SpatialMap only, so a Mip-NeRF 360 adapter is missing; 12.5 GB dataset > free disk locally"
     req: [GPU, LARGE_DISK]
     est: {vram_gb: 16, ram_gb: 32, disk_gb: 15, runtime: "~1 h", basis: "download MEASURED 12.54 GB (whole zip; no per-scene archive found)"}
     datasets: [mipnerf360]
@@ -462,7 +462,7 @@ items:
     phase: 8
     name: "Splat ablations: AR vs refined vs pure-SfM poses; keyframe selector vs every-Nth"
     status: not_implemented
-    local_blocker: "depends on P8-01; CaptureKit keyframe selector does not exist"
+    local_blocker: "depends on P8-01; ablation runner (AR vs refined vs pure-SfM poses, keyframe selector vs every-Nth) does not exist yet. A keyframe selector exists in 2D-3D/capturekit/core/quality/quality.cpp (KeyframeSelector) and spatial/io/keyframes.py, but no real Scan Bundle has been through it"
     req: [GPU]
     est: {vram_gb: 16, ram_gb: 32, disk_gb: 15, runtime: "3-6 h", basis: "~3-4 x P8-01"}
     datasets: [replica_full, arkitscenes_2]
@@ -475,7 +475,7 @@ items:
     phase: 8
     name: "Splat compression/export size + quality loss"
     status: not_implemented
-    local_blocker: "no export format decided"
+    local_blocker: "uncompressed 3DGS PLY export exists (recon/splat/plyio.py); no compression format chosen (SPZ / glTF KHR_gaussian_splatting, T-012); needs P8-01 output"
     req: [GPU]
     est: {vram_gb: 8, ram_gb: 16, disk_gb: 2, runtime: "< 1 h", basis: "ASSUMPTION"}
     datasets: []
@@ -488,7 +488,7 @@ items:
     phase: 9
     name: "End-to-end Scan Bundle -> SpatialMap + ReconPackage (mesh + splat separate) on every eval scene"
     status: partial
-    local_blocker: "recon.cli run packages mesh and splat as separate manifest entries (splat recorded as skipped without CUDA). Needs real bundles + CUDA for the splat half."
+    local_blocker: "recon.cli (no 'run' subcommand, T-030) packages mesh and splat as separate manifest entries; splat trains when CUDA is present, else is recorded as skipped (tests/test_phase10.py); the CUDA path has never run. Real Scan Bundles do not exist and the backend cannot ingest v1.3.0 MCAP bundles (SCAN_BUNDLE.md is the v0.1 reader), so only Replica / ARKitScenes SpatialMaps are possible"
     req: [GPU, HIGH_RAM, LARGE_DISK]
     est: {vram_gb: 16, ram_gb: 64, disk_gb: 100, runtime: "sum of stages", basis: "sum of P2-P8 estimates"}
     datasets: [replica_full, arkitscenes_2, scanbundles_real]

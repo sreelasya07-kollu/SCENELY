@@ -105,6 +105,22 @@ class TrackMemoryTest {
         t.forEach { assertEquals(TrackMemory.colorFor(it.id), it.color) }
     }
 
+    @Test fun seenCountAndSnapshotTrackEverySighting() {
+        val m = TrackMemory()
+        fun live(c: Vec3, t: Long) = m.assign(listOf(SegPrompt(null, SurfaceKind.OBJECT, "chair", 1f, 1f, null, c, 62, 0.8f)), t).single()
+        val a = live(Vec3(1f, 0.4f, 2f), 100)
+        live(Vec3(1.1f, 0.4f, 2f), 200)
+        val back = live(Vec3(1.0f, 0.4f, 2.1f), 900)
+        assertEquals(a.id, back.id)
+        val s = m.snapshot().single()
+        assertEquals(3, s.seenCount); assertEquals(100L, s.firstSeenNs); assertEquals(900L, s.lastSeenNs)
+        assertEquals(62, s.cocoId); assertEquals(0.8f, s.score, 1e-6f)
+        assertEquals(Vec3(1.0f, 0.4f, 2.1f), s.centre)
+        // A run without that chair does not count as a sighting.
+        m.assign(listOf(floor(1)), 1000)
+        assertEquals(3, m.snapshot().first { it.label == "chair" }.seenCount)
+    }
+
     @Test fun boxIou() {
         assertEquals(1f, Box2(0f, 0f, 10f, 10f).iou(Box2(0f, 0f, 10f, 10f)), 1e-6f)
         assertEquals(0f, Box2(0f, 0f, 10f, 10f).iou(Box2(20f, 20f, 30f, 30f)), 1e-6f)

@@ -14,6 +14,7 @@ FORBIDDEN = {
     "export": {"spatial", "recon", "eval"},
     "qa": {"spatial", "recon", "eval"},
     "router": {"spatial", "recon", "eval", "qa", "export"},
+    "jobs": {"spatial", "recon", "eval", "qa", "export", "router"},
 }
 
 

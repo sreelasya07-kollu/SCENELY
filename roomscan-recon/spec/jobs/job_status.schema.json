@@ -1,0 +1,82 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "roomscan.job/1",
+ "title": "Job status (GET /jobs/<bundle_id>)",
+ "description": "Contract between the roomscan-recon job service (owner), the Android app and the iOS port (readers). Readers ignore unknown keys; the service never changes the meaning of an existing key. `url` values are relative to the job server base. Splat stages stay pending (where gpu_worker) until a GPU reconstruction is attached. `verdict` comes only from job_report.json (qa); no reader computes one. example_job.json is illustrative, not a measured result.",
+ "type": "object",
+ "additionalProperties": false,
+ "required": ["schema", "bundle_id", "state", "created", "updated", "error", "validation", "stages", "verdict", "rescan", "measurements", "files"],
+ "properties": {
+  "schema": {"const": "roomscan.job/1"},
+  "bundle_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+  "state": {"enum": ["queued", "running", "done", "failed", "rejected"], "description": "rejected = the server-side bundle validation said FAIL; failed = a stage failed (see error)"},
+  "created": {"type": "string", "description": "UTC, ISO 8601"},
+  "updated": {"type": "string", "description": "UTC, ISO 8601"},
+  "error": {"type": ["string", "null"], "description": "'<stage>: <message>' when failed or rejected"},
+  "validation": {
+   "type": ["object", "null"],
+   "description": "server-side semantic validation of the bundle (ckit validate --level semantic); null when the verifier reported none",
+   "additionalProperties": false,
+   "required": ["verdict", "issues"],
+   "properties": {
+    "verdict": {"enum": ["PASS", "WARN", "FAIL"]},
+    "issues": {"type": "array", "items": {"$ref": "#/$defs/issue"}}
+   }
+  },
+  "stages": {
+   "type": "array",
+   "items": {"$ref": "#/$defs/stage"}
+  },
+  "verdict": {"enum": ["pass", "pass_with_warnings", "needs_rescan", null]},
+  "rescan": {"type": "array", "items": {"$ref": "#/$defs/rescan"}, "description": "sorted by priority, highest first"},
+  "measurements": {"type": ["object", "null"], "description": "export/measurements.json verbatim"},
+  "files": {"type": "array", "items": {"$ref": "#/$defs/file"}}
+ },
+ "$defs": {
+  "issue": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["code", "severity", "message"],
+   "properties": {
+    "code": {"type": "string"},
+    "severity": {"enum": ["ERROR", "WARN", "INFO"]},
+    "message": {"type": "string"}
+   }
+  },
+  "stage": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["name", "status", "reason", "where"],
+   "properties": {
+    "name": {"enum": ["validate", "spatial", "recon", "export", "qa", "splat", "splat_eval"]},
+    "status": {"enum": ["pending", "running", "ok", "skipped", "failed"]},
+    "reason": {"type": ["string", "null"]},
+    "where": {"enum": ["local", "gpu_worker"]}
+   }
+  },
+  "rescan": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["surface", "reason", "priority", "area_m2", "instruction"],
+   "properties": {
+    "surface": {"enum": ["wall", "floor", "ceiling"]},
+    "reason": {"enum": ["unseen", "few_views", "narrow_baseline"]},
+    "priority": {"type": "number", "minimum": 0, "maximum": 1},
+    "area_m2": {"type": "number"},
+    "instruction": {"type": "string"}
+   }
+  },
+  "file": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["name", "kind", "url", "size", "sha256"],
+   "properties": {
+    "name": {"type": "string"},
+    "kind": {"enum": ["floorplan_svg", "floorplan_dxf", "mesh_glb", "point_cloud_laz", "room_shell_usda", "splat_ply", "job_report", "measurements", "spatial_map_zip"]},
+    "url": {"type": "string", "pattern": "^/jobs/", "description": "relative to the job server base"},
+    "size": {"type": "integer", "minimum": 0},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+   }
+  }
+ }
+}

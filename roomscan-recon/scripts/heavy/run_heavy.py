@@ -1,8 +1,8 @@
 """Run inventory items by id or priority, in dependency order, with resource accounting.
 
-  .venv/bin/python scripts/heavy/run_heavy.py --ids P3-04 P3-12        # explicit
-  .venv/bin/python scripts/heavy/run_heavy.py --priority P0 P1         # by priority
-  .venv/bin/python scripts/heavy/run_heavy.py --priority P0 --dry-run  # show plan only
+  uv run python scripts/heavy/run_heavy.py --ids P3-04 P3-12        # explicit
+  uv run python scripts/heavy/run_heavy.py --priority P0 P1         # by priority
+  uv run python scripts/heavy/run_heavy.py --priority P0 --dry-run  # show plan only
 
 Each item -> runs/heavy/<date>/<id>/{cmd.txt, stdout.log, meta.json}; summary.json + summary.md
 in runs/heavy/<date>/. Items whose status is not_implemented or whose command contains TODO
@@ -147,7 +147,8 @@ def main():
             meta["started"] = datetime.now().isoformat()
             with open(d / "stdout.log", "w") as log:
                 # Inventory commands call bare `python`: put the project venv first on PATH.
-                env = os.environ | {"PATH": f"{REPO / '.venv' / 'bin'}:{os.environ['PATH']}"}
+                venv_bin = REPO / ".venv" / ("Scripts" if os.name == "nt" else "bin")
+                env = os.environ | {"PATH": f"{venv_bin}{os.pathsep}{os.environ['PATH']}"}
                 proc = subprocess.Popen(
                     ["bash", "-lc", it["command"]],
                     cwd=REPO,

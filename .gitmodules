@@ -1,0 +1,12 @@
+[submodule "2D-3D/capturekit/third_party/nanobind"]
+	path = 2D-3D/capturekit/third_party/nanobind
+	url = https://github.com/wjakob/nanobind.git
+[submodule "2D-3D/capturekit/third_party/eigen"]
+	path = 2D-3D/capturekit/third_party/eigen
+	url = https://gitlab.com/libeigen/eigen.git
+[submodule "2D-3D/capturekit/third_party/mcap"]
+	path = 2D-3D/capturekit/third_party/mcap
+	url = https://github.com/foxglove/mcap.git
+[submodule "2D-3D/capturekit/third_party/sophus"]
+	path = 2D-3D/capturekit/third_party/sophus
+	url = https://github.com/strasdat/Sophus.git

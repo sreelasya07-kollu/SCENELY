@@ -18,6 +18,7 @@ import android.widget.TextView
 import dev.capturekit.capture.ResearchReport
 import dev.capturekit.consent.ConsentStore
 import dev.capturekit.nativebridge.Status
+import dev.capturekit.sample.results.ResultsGate
 import dev.capturekit.sample.upload.UploadGate
 import dev.capturekit.upload.UploadPlan
 import dev.capturekit.upload.UploadPolicy
@@ -38,7 +39,7 @@ import java.util.concurrent.ConcurrentHashMap
  * an upload is active. The standard flavour has no INTERNET permission, so it shows no upload UI at all.
  */
 class ScansActivity : Activity() {
-    private data class Row(val dir: File, val timeMs: Long, val room: String?, val verdict: String?, val size: Long, val upload: UploadStatus, val thumb: Bitmap?)
+    private data class Row(val dir: File, val timeMs: Long, val room: String?, val verdict: String?, val size: Long, val upload: UploadStatus, val thumb: Bitmap?, val bundleId: String? = null, val verified: Boolean = false)
 
     private lateinit var list: LinearLayout
     private var wifiOnly = true
@@ -98,9 +99,11 @@ class ScansActivity : Activity() {
         return dirs.map { d ->
             val manifest = try { File(d, UploadPlan.MANIFEST).readText() } catch (t: Throwable) { "" }
             val research = try { ResearchReport.fileFor(d).takeIf { it.exists() }?.readText() } catch (t: Throwable) { null }
+            val upload = if (uploads) UploadWorker.status(applicationContext, d) else UploadStatus(UploadState.NONE)
             Row(d, ScanInfo.timeMs(d.name, d.lastModified()), ScanInfo.roomLabel(research), ReviewActivity.parseManifest(manifest).verdict,
                 try { UiKit.dirSizeBytes(d) } catch (t: Throwable) { 0L },
-                if (uploads) UploadWorker.status(applicationContext, d) else UploadStatus(UploadState.NONE), thumbFor(d))
+                upload, thumbFor(d), UploadPlan.bundleId(manifest),
+                uploads && (upload.state == UploadState.VERIFIED || UploadPolicy.verifiedMarker(d).exists()))
         }.sortedByDescending { it.timeMs }
     }
 
@@ -224,6 +227,13 @@ class ScansActivity : Activity() {
             }, lp(0))
             else if (r.verdict != "PASS" && r.verdict != "WARN" && r.upload.state == UploadState.NONE) col.addView(TextView(this).apply {
                 text = if (r.verdict == "FAIL") "A failed scan is never uploaded." else "Not finalized: this scan cannot be uploaded."; textSize = 13.5f; setTextColor(UiKit.LABEL_3)
+            }, lp(0).apply { topMargin = dp(8) })
+        }
+        // Results of the server run: only for a scan the server has verified, and only when this build has a job server.
+        if (ResultsGate.available && r.verified && r.bundleId != null) {
+            col.addView(UiKit.secondaryButton(this, "View results").apply {
+                contentDescription = "View the server results for the scan from $date"
+                setOnClickListener { startActivity(Intent(this@ScansActivity, ResultsActivity::class.java).putExtra(ResultsActivity.EXTRA_BUNDLE_ID, r.bundleId)) }
             }, lp(0).apply { topMargin = dp(8) })
         }
         col.isClickable = true

@@ -228,6 +228,9 @@ class MainActivity : Activity() {
             addView(UiKit.listRow(this@MainActivity, null, "Voice guidance", "Spoken coaching while you scan", trailing = voice).apply {
                 isClickable = true; foreground = UiKit.rowRipple(); setOnClickListener { voice.toggle() }
             })
+            addView(UiKit.listRow(this@MainActivity, null, "Settings", "Object boxes, motion sensors, prompts, voice commands") {
+                startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
+            })
         }, lp(28))
 
         // 5. Privacy

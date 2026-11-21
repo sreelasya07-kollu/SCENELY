@@ -32,6 +32,9 @@ android {
             val verifierUrl = esc((project.findProperty("VERIFIER_URL") as String?) ?: "")
             buildConfigField("String", "TUS_URL", "\"$tusUrl\"")
             buildConfigField("String", "VERIFIER_URL", "\"$verifierUrl\"")
+            // Job server (roomscan-recon jobs, port 8090) for the results screen; empty = no results screen.
+            val jobsUrl = esc((project.findProperty("JOBS_URL") as String?) ?: "")
+            buildConfigField("String", "JOBS_URL", "\"$jobsUrl\"")
             // Empty DSN = Sentry off. Telemetry.kt additionally requires telemetry consent.
             val sentryDsn = esc((project.findProperty("SENTRY_DSN") as String?) ?: "")
             buildConfigField("String", "SENTRY_DSN", "\"$sentryDsn\"")

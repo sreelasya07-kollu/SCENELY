@@ -10,14 +10,15 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import dev.capturekit.capture.CoreEvent
+import dev.capturekit.guidance.Completeness
 import dev.capturekit.guidance.ObjectSummary
 import dev.capturekit.guidance.ScanStateSnapshot
 import dev.capturekit.sample.UiKit.dp
 import kotlin.math.max
 
 /**
- * Review-before-finish sheet. Shown after the core is paused and before finalize: the same parts checklist as the
- * live HUD ([ChecklistView]) plus the weak walls, with "Scan the gaps" (resume the same bundle) and "Finish anyway".
+ * Review-before-finish sheet. Shown after the core is paused and before finalize: the completeness % and the weak zones
+ * (ADR 0035), plus the weak walls, with "Scan the gaps" (resume the same bundle) and "Finish anyway".
  * Wall names are "Wall N": N = the core's stable wall id (overlay v3, same names as the voice answers) or, for an older
  * core, the 1-based position in the last snapshot's surfaces. Only evidenced walls count (see
  * [ScanStateSnapshot.evidencedWalls]): hypothesised outline sides, plane-less inferred walls and walls entirely hidden
@@ -47,14 +48,10 @@ object ReviewSheet {
      * [guidance] off: minimal empty-scan notice (title, one line, the two buttons); no checklist or walls.
      * The "Found" line needs [detector] (ADR 0032), as on the Review screen.
      */
-    fun show(act: Activity, o: CoreEvent.Overlay?, guidance: Boolean, detector: Boolean, onGaps: () -> Unit, onFinish: () -> Unit): Dialog {
+    fun show(act: Activity, o: CoreEvent.Overlay?, guidance: Boolean, detector: Boolean, summary: Completeness.Summary,
+             onGaps: () -> Unit, onFinish: () -> Unit): Dialog {
         val weak = if (guidance) weakWalls(o) else emptyList()
         val empty = nothingFound(o)
-        val segs = o?.let { ScanStateSnapshot.evidencedWalls(it) }.orEmpty()
-        var done = 0; var scanning = 0
-        for (s in segs) if (s.pct >= RoomView.DONE_PCT) done++ else if (s.pct >= ChecklistView.SCANNING_PCT) scanning++
-        val pct = Math.round(((o?.completeness ?: 0.0) * 100).coerceIn(0.0, 100.0)).toInt()
-        val checklist = ChecklistView(act).apply { set(o?.floorFound ?: false, (o?.ceilingFound ?: false) || (o?.ceilingSeen ?: false), if (o == null) 0 else ChecklistView.foundWalls(o), done, scanning, pct) }
 
         val dlg = Dialog(act)
         fun text(t: String, sp: Float, bold: Boolean = false) = TextView(act).apply {
@@ -80,11 +77,13 @@ object ReviewSheet {
             })
 
             addView(text("Before you finish", 22f, true))
-            if (guidance) addView(checklist, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = act.dp(10) })
+            addView(text("Complete: ${summary.completenessPct}%", UiKit.TEXT_M, true), LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = act.dp(10) })
             addView(text(gapsText, UiKit.TEXT_M).apply {
                 setTextColor(if (empty || weak.isNotEmpty()) UiKit.AMBER else 0xFFB0BEC5.toInt())
-                contentDescription = if (guidance) "$gapsText ${checklist.description}" else gapsText
-            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = act.dp(10) })
+                contentDescription = "Complete ${summary.completenessPct} percent. $gapsText"
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = act.dp(6) })
+            for (z in summary.weakZones.take(5)) addView(text("\u2022 ${z.text}", UiKit.TEXT_S).apply { setTextColor(0xFFCFD8DC.toInt()) },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = act.dp(3) })
             if (found.isNotEmpty()) addView(text("Found: $found.", UiKit.TEXT_M).apply {
                 setTextColor(0xFFCFD8DC.toInt())
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = act.dp(6) })

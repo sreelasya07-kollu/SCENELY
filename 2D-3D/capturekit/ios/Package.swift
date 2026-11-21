@@ -30,11 +30,14 @@ let package = Package(
     ],
     products: [
         .library(name: "CaptureKit", targets: ["CaptureKit"]),
+        .library(name: "CaptureKitSegment", targets: ["CaptureKitSegment"]),
     ],
     dependencies: [
         .package(url: "https://github.com/tus/TUSKit.git", exact: "3.7.0"),
         .package(url: "https://github.com/groue/GRDB.swift.git", exact: "7.12.0"),
         .package(url: "https://github.com/getsentry/sentry-cocoa.git", exact: "9.34.0"),
+        // On-device RF-DETR-Seg runtime (same .tflite files as Android), used only by CaptureKitSegment (ADR 0037).
+        .package(url: "https://github.com/google-ai-edge/LiteRT-Swift.git", exact: "2.3.0"),
     ],
     targets: coreTargets + [
         .target(
@@ -54,11 +57,30 @@ let package = Package(
                 .linkedFramework("ARKit", .when(platforms: [.iOS])),
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("CoreMotion", .when(platforms: [.iOS])),
+                .linkedFramework("Vision", .when(platforms: [.iOS])),
+                .linkedFramework("Speech", .when(platforms: [.iOS])),
             ]
+        ),
+        // Live instance segmentation (LiteRT). Kept out of CaptureKit so CaptureKit tests do not need LiteRT.
+        .target(
+            name: "CaptureKitSegment",
+            dependencies: [
+                "CaptureKit",
+                .product(name: "LiteRT", package: "LiteRT-Swift"),
+                .product(name: "LiteRtMetalAccelerator", package: "LiteRT-Swift"),
+            ],
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
             name: "CaptureKitTests",
-            dependencies: ["CaptureKit"]
+            dependencies: ["CaptureKit"],
+            // example_job.json = a copy of roomscan-recon/spec/jobs/example_job.json (JobStatus.parse test).
+            resources: [.process("Resources")],
+            swiftSettings: [.swiftLanguageMode(.v5)]   // same mode as the CaptureKit target it tests
+        ),
+        .testTarget(
+            name: "CaptureKitSegmentTests",
+            dependencies: ["CaptureKitSegment"]
         ),
     ]
 )

@@ -3,7 +3,7 @@
 # Each file is pinned to one Hugging Face commit and one sha256: a changed file is rejected and deleted. Re-running is a
 # no-op for files already present and matching. Without a file the app builds and that feature stays off.
 #   fetch_models.sh                      Phase 9 object detector (4.6 MB)
-#   fetch_models.sh --with-segmentation  also the issue #8 SAM 2.1-tiny encoder + mask decoder + prompt constants (~97 MB)
+#   fetch_models.sh --with-segmentation  also the RF-DETR-Seg Nano live object boxes (ADR 0035): two GPU graphs + four host constants (~62 MB)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -46,11 +46,14 @@ fetch litert-community/efficientdet 360eea05e7de8f0d0f5602b548b5bbee6f7b65c7 \
   efficientdet_lite0_detection.tflite 33a3b622c7cac0762f96089353cd61495f3e993968d133af7871bfc2d5396704
 
 if [ "${1:-}" = "--with-segmentation" ]; then
-  # Issue #8 segmentation overlay (feature flag `segmentation`, off by default). License apache-2.0 (facebook/sam2.1-hiera-tiny).
-  fetch litert-community/SAM2.1-Hiera-Tiny-Image-Encoder d701df10082ef6bc9d5c47484070813578539df1 \
-    sam2_tiny_image_encoder_v2_fp16.tflite 9f87693052c7c9bee2271f86d947420d7409ef0c2bec36c1885335afab90f6be
-  fetch litert-community/SAM2.1-Hiera-Tiny-Mask-Decoder 049c2500a5f2c358f194dbc313eb20a68bc57222 \
-    sam2_tiny_mask_decoder_v2_fp16.tflite 80d668b19156c548f31a8c8eb3cc1da2127de36e24e96ef923467a1e54c99e76
-  fetch litert-community/SAM2.1-Hiera-Tiny-Mask-Decoder 049c2500a5f2c358f194dbc313eb20a68bc57222 \
-    prompt_encode_const.bin c1ac798f0cc0bd5e4b0dc94efe26f2f9dfe4d1d4cec141ab0350580ce7a48588 sam2_tiny_prompt_encode_const.bin
+  # Live object boxes (feature flag `segmentation`, on by default but only active with these files). RF-DETR-Seg Nano,
+  # litert-community/RF-DETR-Seg-Nano-LiteRT (Apache-2.0 card; base weights roboflow/rf-detr Apache-2.0).
+  RFDETR=litert-community/RF-DETR-Seg-Nano-LiteRT
+  RFDETR_REV=125acbf8b7e45fa3a245ce099579f8d805daaeed
+  fetch $RFDETR $RFDETR_REV rfdetrseg_graphA_fp16.tflite 1b85a919c19a1832b729f546c3f60ceca179b669258d7ab244fac96890bf630a
+  fetch $RFDETR $RFDETR_REV rfdetrseg_graphB_fp16.tflite 71ad26d20f3f5bc15b8fc73384a1ce3ad0ceb6b4f994bb042662641aea071ae7
+  fetch $RFDETR $RFDETR_REV clspos.bin 11371e5ccb86a769f96e5eeb658f303715da8f26c4ff6158fef726a2ebd69bd8
+  fetch $RFDETR $RFDETR_REV pospatch.bin f7e9ba735aa5b820ed4eb4604bea7c2082873815381b5ef069f67d881beb1d81
+  fetch $RFDETR $RFDETR_REV query_feat.bin 936babdfe6f5f52c246d9b4453d879cb2743339868a99d23b90e7c88f34adec2
+  fetch $RFDETR $RFDETR_REV refpoint_embed.bin e5713e5fe84a3df26598af65ce29e3a513097b20071849019b3e1f3a8c156c26
 fi

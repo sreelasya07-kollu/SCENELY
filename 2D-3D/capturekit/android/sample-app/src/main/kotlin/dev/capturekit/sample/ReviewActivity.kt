@@ -7,8 +7,8 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import dev.capturekit.capture.EventParser
+import dev.capturekit.guidance.Completeness
 import dev.capturekit.guidance.ObjectSummary
-import kotlin.math.max
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -92,34 +92,8 @@ class ReviewActivity : Activity() {
                 addView(right, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             }
         }
-        // Feature switches (ADR 0032): room drawing + walls = guidance, "Found" counts = detector.
+        // Feature switches (ADR 0032): "Found" counts = detector.
         val features = Features.get(this)
-        // Final room: the last live snapshot (walls inked, floor/ceiling) and the parts checklist, from Intent extras.
-        if (features.guidance && intent.hasExtra(EXTRA_SURFACES)) {
-            val segs = EventParser.parseSurfaces(intent.getStringExtra(EXTRA_SURFACES) ?: "")
-            val floor = intent.getBooleanExtra(EXTRA_FLOOR, false)
-            val ceiling = intent.getBooleanExtra(EXTRA_CEILING, false)
-            val shell = EventParser.parseShell(intent.getStringExtra(EXTRA_SHELL) ?: "")
-            val closed = intent.getBooleanExtra(EXTRA_SHELL_CLOSED, false)
-            val spans = EventParser.parseSpans(intent.getStringExtra(EXTRA_SPANS) ?: "")
-            val objects = EventParser.parseObjects(intent.getStringExtra(EXTRA_OBJECTS) ?: "")
-            val openings = EventParser.parseOpenings(intent.getStringExtra(EXTRA_OPENINGS) ?: "")
-            var done = 0; var scanning = 0
-            for (w in segs) if (w.pct >= RoomView.DONE_PCT) done++ else if (w.pct >= ChecklistView.SCANNING_PCT) scanning++
-            val checklist = ChecklistView(this).apply {
-                set(floor, ceiling, max(intent.getIntExtra(EXTRA_WALLS_FOUND, 0), 0), done, scanning, -1)
-            }
-            val mid = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-                contentDescription = "Room parts. ${checklist.description}"
-                background = UiKit.rounded(UiKit.FILL, dp(18).toFloat())
-                setPadding(dp(6), dp(6), dp(6), dp(6))
-                if (segs.isNotEmpty() || shell.isNotEmpty()) addView(RoomView(this@ReviewActivity).also { it.setSnapshot(segs, floor, ceiling, shell, closed, spans, objects, openings) }, LinearLayout.LayoutParams(dp(170), dp(130)))
-                addView(checklist, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) })
-            }
-            card.addView(mid, 1, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { rightMargin = dp(24); gravity = Gravity.CENTER_VERTICAL })
-        }
         left.addView(UiKit.title(this, if (ok) "Scan saved" else "Save failed", 28f), lp(10))
         val (vText, vColor) = when {
             !ok -> "Not saved (status ${UiKit.statusName(status)})" to UiKit.RED
@@ -138,6 +112,12 @@ class ReviewActivity : Activity() {
             )
             if (found.isNotEmpty()) left.addView(row("Found", found, wrap = true).apply { contentDescription = "Found in the room: $found" }, lp(6))
             else if (intent.getBooleanExtra(EXTRA_OBJECTS_EXPECTED, false)) left.addView(row("Found", "No objects recognised"), lp(6))
+        }
+        // Completeness and weak zones from the last live snapshot (contract C3, Intent extra only).
+        val summary = parseSummary(intent.getStringExtra(Completeness.EXTRA))
+        if (summary != null) {
+            left.addView(row("Complete", "${summary.first}%").apply { contentDescription = "Scan completeness ${summary.first} percent" }, lp(6))
+            if (summary.second.isNotEmpty()) left.addView(row("To improve", summary.second.joinToString("\n") { "\u2022 $it" }, wrap = true), lp(6))
         }
         left.addView(row("Size", UiKit.humanSize(size)), lp(6))
         left.addView(row("Folder", dir.name), lp(6))
@@ -225,19 +205,22 @@ class ReviewActivity : Activity() {
         const val EXTRA_STATUS = "status"
         const val EXTRA_ELAPSED_MS = "elapsed_ms"
         const val EXTRA_KEYFRAMES = "keyframes"
-        /** Last overlay snapshot from the scan: surfaces string ("x0,z0,x1,z1,pct;...") + flags. Absent when no overlay arrived. */
-        const val EXTRA_SURFACES = "room_surfaces"
-        const val EXTRA_FLOOR = "room_floor"
-        const val EXTRA_CEILING = "room_ceiling"
-        const val EXTRA_WALLS_FOUND = "room_walls_found"
-        /** Layout outline and details of the last overlay (real-room-fix T3): same string formats as the overlay v3 keys. */
-        const val EXTRA_SHELL = "room_shell"
-        const val EXTRA_SHELL_CLOSED = "room_shell_closed"
-        const val EXTRA_SPANS = "room_spans"
+        /** Last overlay snapshot's objects / openings (overlay string formats) for the "Found" row. */
         const val EXTRA_OBJECTS = "room_objects"
         const val EXTRA_OPENINGS = "room_openings"
         /** True when the scan lifted detections to objects (detector + understanding on): "No objects recognised" is then meaningful. */
         const val EXTRA_OBJECTS_EXPECTED = "room_objects_expected"
+
+        /** ReviewSummary JSON (contract C3) -> (completeness %, up to 5 weak-zone texts); null when absent or unreadable. */
+        fun parseSummary(json: String?): Pair<Int, List<String>>? = try {
+            if (json.isNullOrEmpty()) null else {
+                val o = org.json.JSONObject(json)
+                val zones = o.optJSONArray("weak_zones")
+                val texts = ArrayList<String>()
+                if (zones != null) for (i in 0 until minOf(zones.length(), 5)) zones.optJSONObject(i)?.optString("text", "")?.takeIf { it.isNotEmpty() }?.let { texts.add(it) }
+                o.getInt("completeness_pct") to texts
+            }
+        } catch (t: Throwable) { null }
 
         /** manifest.json: validation.verdict, counts.keyframes and WARN/ERROR messages from validation.issues (INFO hidden). */
         fun parseManifest(text: String): Parsed = try {

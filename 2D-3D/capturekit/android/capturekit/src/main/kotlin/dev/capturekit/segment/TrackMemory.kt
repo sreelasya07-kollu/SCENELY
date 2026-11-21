@@ -42,14 +42,22 @@ data class Box2(val x0: Float, val y0: Float, val x1: Float, val y1: Float) {
 data class SegPrompt(
     val key: TrackKey?, val kind: SurfaceKind, val label: String,
     val x: Float, val y: Float, val box: Box2? = null, val centre: Vec3? = null,
+    /** Live object boxes (ADR 0035): COCO category id and score of the sighting; 0 when not a model instance. */
+    val cocoId: Int = 0, val score: Float = 0f,
+)
+
+/** What [TrackMemory.snapshot] reports per remembered track (the last known box / centre; [seenCount] = sightings so far). */
+data class TrackInfo(
+    val id: Int, val kind: SurfaceKind, val label: String, val cocoId: Int, val score: Float,
+    val box: Box2?, val centre: Vec3?, val seenCount: Int, val firstSeenNs: Long, val lastSeenNs: Long,
 )
 
 /** A remembered object or surface: [id] never changes and is never reused; [color] is ARGB, a function of [id]. */
 data class Track(val id: Int, val kind: SurfaceKind, val label: String, val color: Int)
 
 /**
- * Identity memory for the segmentation overlay (issue #8). It lives in app code, not in the model: the on-device SAM 2
- * exports have no memory encoder. A prompt with a [TrackKey] keeps its track for as long as the key is remembered; a
+ * Identity memory for the live object boxes (ADR 0035). It lives in app code, not in the model: the on-device RF-DETR-Seg
+ * graphs have no memory. A prompt with a [TrackKey] keeps its track for as long as the key is remembered; a
  * prompt without one (or with a key not seen yet) is matched to a remembered track of the same kind and label by 3D
  * centre distance <= [maxCentreDistM] or projected-box IoU >= [minIou]. A keyed prompt never takes a track that holds a
  * different key (two chairs side by side stay two tracks). Bounded LRU of [capacity] tracks, so an object that leaves
@@ -61,7 +69,9 @@ class TrackMemory(
     private val minIou: Float = 0.3f,          // guess; tune on device recordings (8b)
     private val maxCentreDistM: Float = 0.5f,  // guess; tune on device recordings (8b)
 ) {
-    private class Entry(val id: Int, val kind: SurfaceKind, var label: String, var key: TrackKey?, var box: Box2?, var centre: Vec3?)
+    private class Entry(val id: Int, val kind: SurfaceKind, var label: String, var key: TrackKey?, var box: Box2?, var centre: Vec3?) {
+        var cocoId = 0; var score = 0f; var seenCount = 0; var firstSeenNs = 0L; var lastSeenNs = 0L
+    }
 
     private val byId = LinkedHashMap<Int, Entry>(16, 0.75f, true)   // access order: first = least recently seen
     private val byKey = HashMap<TrackKey, Entry>()
@@ -72,7 +82,7 @@ class TrackMemory(
     val size: Int get() = byId.size
 
     /** One run's prompts -> one track each, same order. A track goes to at most one prompt per run. */
-    fun assign(prompts: List<SegPrompt>): List<Track> {
+    fun assign(prompts: List<SegPrompt>, tNs: Long = 0L): List<Track> {
         val out = arrayOfNulls<Entry>(prompts.size)
         val used = HashSet<Int>()
         // 1) Known keys.
@@ -111,6 +121,10 @@ class TrackMemory(
             e.label = p.label
             if (p.box != null) e.box = p.box
             if (p.centre != null) e.centre = p.centre
+            if (p.cocoId != 0) e.cocoId = p.cocoId
+            e.score = p.score
+            if (e.seenCount++ == 0) e.firstSeenNs = tNs
+            e.lastSeenNs = tNs
         }
         if (byId.size > capacity) {
             val it = byId.values.iterator()
@@ -137,6 +151,11 @@ class TrackMemory(
             return if (d <= maxCentreDistM) 1f + (1f - d / maxCentreDistM) + iou else 0f
         }
         return if (iou >= minIou) iou else 0f
+    }
+
+    /** Every remembered track, oldest id first (least recently seen is NOT the order). */
+    fun snapshot(): List<TrackInfo> = byId.values.sortedBy { it.id }.map {
+        TrackInfo(it.id, it.kind, it.label, it.cocoId, it.score, it.box, it.centre, it.seenCount, it.firstSeenNs, it.lastSeenNs)
     }
 
     fun clear() { byId.clear(); byKey.clear() }

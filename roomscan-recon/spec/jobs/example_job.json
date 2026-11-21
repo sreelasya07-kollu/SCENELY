@@ -1,0 +1,49 @@
+{
+ "schema": "roomscan.job/1",
+ "bundle_id": "example-bundle-0001",
+ "state": "done",
+ "created": "2026-11-22T10:00:00Z",
+ "updated": "2026-11-22T10:12:30Z",
+ "error": null,
+ "validation": {
+  "verdict": "WARN",
+  "issues": [
+   {"code": "POSE_GAP", "severity": "WARN", "message": "illustrative example: pose gap of 0.6 s"}
+  ]
+ },
+ "stages": [
+  {"name": "validate", "status": "ok", "reason": null, "where": "local"},
+  {"name": "spatial", "status": "ok", "reason": null, "where": "local"},
+  {"name": "recon", "status": "failed", "reason": "mesh failed: illustrative example (OpenMVS image missing)", "where": "local"},
+  {"name": "export", "status": "ok", "reason": null, "where": "local"},
+  {"name": "qa", "status": "ok", "reason": null, "where": "local"},
+  {"name": "splat", "status": "pending", "reason": "waiting for a GPU run (no CUDA device: splat training runs on the GPU machine)", "where": "gpu_worker"},
+  {"name": "splat_eval", "status": "pending", "reason": "waiting for the splat", "where": "gpu_worker"}
+ ],
+ "verdict": "needs_rescan",
+ "rescan": [
+  {"surface": "wall", "reason": "unseen", "priority": 0.9, "area_m2": 3.2, "instruction": "Illustrative example: scan the wall on your left again, slowly, from two steps back."},
+  {"surface": "ceiling", "reason": "few_views", "priority": 0.4, "area_m2": 1.1, "instruction": "Illustrative example: tilt the phone up and sweep the ceiling near the window."}
+ ],
+ "measurements": {
+  "floor_area_m2": 12.5,
+  "perimeter_m": 14.2,
+  "wall_lengths_m": [4.0, 3.1, 4.0, 3.1],
+  "ceiling_height_m": 2.55,
+  "volume_m3": 31.9,
+  "bbox_m": [4.0, 3.1],
+  "floor_polygon_source": "illustrative",
+  "scale_confidence": 0.8,
+  "scale_source": "metric_priors",
+  "warnings": []
+ },
+ "files": [
+  {"name": "job_report.json", "kind": "job_report", "url": "/jobs/example-bundle-0001/files/job_report.json", "size": 1200, "sha256": "0000000000000000000000000000000000000000000000000000000000000001"},
+  {"name": "measurements.json", "kind": "measurements", "url": "/jobs/example-bundle-0001/files/export/measurements.json", "size": 400, "sha256": "0000000000000000000000000000000000000000000000000000000000000002"},
+  {"name": "floorplan.svg", "kind": "floorplan_svg", "url": "/jobs/example-bundle-0001/files/export/floorplan.svg", "size": 5200, "sha256": "0000000000000000000000000000000000000000000000000000000000000003"},
+  {"name": "floorplan.dxf", "kind": "floorplan_dxf", "url": "/jobs/example-bundle-0001/files/export/floorplan.dxf", "size": 9000, "sha256": "0000000000000000000000000000000000000000000000000000000000000004"},
+  {"name": "room_shell.usda", "kind": "room_shell_usda", "url": "/jobs/example-bundle-0001/files/export/room_shell.usda", "size": 3000, "sha256": "0000000000000000000000000000000000000000000000000000000000000005"},
+  {"name": "fused_cloud.laz", "kind": "point_cloud_laz", "url": "/jobs/example-bundle-0001/files/export/fused_cloud.laz", "size": 2400000, "sha256": "0000000000000000000000000000000000000000000000000000000000000006"},
+  {"name": "spatial_map.zip", "kind": "spatial_map_zip", "url": "/jobs/example-bundle-0001/spatial_map.zip", "size": 150000000, "sha256": "0000000000000000000000000000000000000000000000000000000000000007"}
+ ]
+}

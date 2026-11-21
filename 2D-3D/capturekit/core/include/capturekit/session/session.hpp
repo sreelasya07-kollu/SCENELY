@@ -32,6 +32,15 @@ const char* state_name(State s);
 /// Legal user-driven transitions (worker-driven ones: Calibrating->Scanning, governor pause).
 bool transition_allowed(State from, State to);
 
+/// Pre-scan "hold still" measurement made by the shell (ADR 0036, contract C1). Recorded in the manifest as
+/// capture_settings.stillness_calibration; the core never subtracts it. Frame: device sensor frame, natural orientation.
+struct StillnessCalibration {
+  double gyro_bias[3] = {0, 0, 0};   // rad/s, mean TYPE_GYROSCOPE (or CMMotion) over the still window
+  bool has_drift = false;            // platform drift estimate (Android TYPE_GYROSCOPE_UNCALIBRATED values[3..5])
+  double drift[3] = {0, 0, 0};       // rad/s
+  double duration_s = 0, gyro_rms = 0, accel_norm = 0, accel_std = 0;
+};
+
 struct SessionConfig {
   bool threaded = true;
   int frame_slots = 4;
@@ -42,6 +51,9 @@ struct SessionConfig {
   /// ADR 0034 (lean bundle): /imu/gyro and /imu/accel are written only when true (research). Off by default: nothing
   /// downstream reads them. The core still keeps the gyro in memory for blur risk and the tracking-recovery check.
   bool record_imu = false;
+  /// Keys `calib.gyro_bias_x|y|z`, `calib.drift_x|y|z` (optional triple), `calib.duration_s`, `calib.gyro_rms`,
+  /// `calib.accel_norm`, `calib.accel_std`: all of them except the drift triple whenever any `calib.*` key is given.
+  std::optional<StillnessCalibration> calib;
   bundle::BundleMeta meta;
   quality::QualityConfig quality;
   governor::GovernorConfig governor;

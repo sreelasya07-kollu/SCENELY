@@ -9,9 +9,10 @@ package dev.capturekit.capture
  *  - `detector`: 2D detector, camera boxes chip, object labels, review "Found" counts (supersedes ADR 0030 "on")
  *  - `voice_commands`: push-to-talk mic chip, VoiceController, StateAnswers
  *  - `recalibrate_card`: the issue #1 recalibration card (the core keyframe pause always stays)
- *  - `segmentation`: issue #8 camera mask overlay + Masks chip (also needs the packaged SAM 2.1 model files)
- *  - `understanding 0|1|2`: core `guide.understanding` override (unchanged from U11-A)
- *  - `record_imu`: research only, keep the IMU channels in the bundle (ADR 0034; the default bundle is lean)
+ *  - `segmentation`: live green object boxes with per-scan memory (ADR 0035; also needs the fetched RF-DETR-Seg model files)
+ *  - `understanding 0|1|2`: core `guide.understanding` override (default 2 since ADR 0036, see [understandingFor])
+ *  - `record_imu`: keep the IMU channels in the bundle (the Android app default is ON since ADR 0036; the core default is lean)
+ * Precedence (ADR 0032 update): debug property > user setting ([PREF_KEYS], SharedPreferences "capturekit") > [Flags.DEFAULTS], see [resolve].
  * The core still records every instruction in /events; only display, speech and haptics are gated.
  */
 object FeatureFlags {
@@ -23,8 +24,16 @@ object FeatureFlags {
     const val PROP_SEGMENTATION = "debug.capturekit.segmentation"
     const val PROP_RECORD_IMU = "debug.capturekit.record_imu"
 
-    /** Understanding level when the detector runs and no property overrides it: objects only, no gap steering. */
-    const val DEFAULT_UNDERSTANDING_WITH_DETECTOR = 1
+    /** Understanding level of a guided scan when no property overrides it (ADR 0036): objects + gaps (the gaps feed the completeness card; steering lines stay hidden while guidance is off). */
+    const val DEFAULT_UNDERSTANDING = 2
+
+    /** User settings keys (SharedPreferences "capturekit", Boolean; contract C4). */
+    const val PREF_GUIDANCE = "ck.guidance"
+    const val PREF_VOICE_COMMANDS = "ck.voice_commands"
+    const val PREF_RECALIBRATE_CARD = "ck.recalibrate_card"
+    const val PREF_RECORD_IMU = "ck.record_imu"
+    const val PREF_OBJECT_BOXES = "ck.object_boxes"
+    val PREF_KEYS: List<String> = listOf(PREF_GUIDANCE, PREF_VOICE_COMMANDS, PREF_RECALIBRATE_CARD, PREF_RECORD_IMU, PREF_OBJECT_BOXES)
 
     /**
      * Instruction types shown/spoken/felt with guidance OFF: the safety and tracking prompts (core InstrType SlowDown,
@@ -39,9 +48,10 @@ object FeatureFlags {
         val guidance: Boolean = false,
         val voiceCommands: Boolean = false,
         val recalibrateCard: Boolean = false,
-        val segmentation: Boolean = false,
-        /** Research only (ADR 0034): keep /imu/gyro and /imu/accel in the bundle. Off = the lean bundle. */
-        val recordImu: Boolean = false,
+        /** Live object boxes + memory (ADR 0035). Needs the fetched model files, otherwise it stays off by itself. */
+        val segmentation: Boolean = true,
+        /** Keep /imu/gyro and /imu/accel in the bundle (ADR 0034; app default ON since ADR 0036). Off = the lean bundle. */
+        val recordImu: Boolean = true,
     ) {
         companion object { val DEFAULTS = Flags() }
     }
@@ -64,6 +74,25 @@ object FeatureFlags {
             recalibrateCard = switchOn(get(PROP_RECALIBRATE_CARD), d.recalibrateCard),
             segmentation = switchOn(get(PROP_SEGMENTATION), d.segmentation),
             recordImu = switchOn(get(PROP_RECORD_IMU), d.recordImu),
+        )
+    }
+
+    /**
+     * Flags with the full precedence (ADR 0032 update): debug property ([props], exact "1"/"0") > user setting ([prefs],
+     * null = never set) > [Flags.DEFAULTS]. Pure; a release build passes `props = { null }`. `detector` and `understanding`
+     * have no user setting (property only).
+     */
+    fun resolve(props: (String) -> String?, prefs: (String) -> Boolean?): Flags {
+        val d = Flags.DEFAULTS
+        fun sw(prop: String, pref: String, def: Boolean) = switchOn(props(prop), prefs(pref) ?: def)
+        return Flags(
+            understanding = understandingLevel(props(PROP_UNDERSTANDING)),
+            detector = detectorOn(props(PROP_DETECTOR)),
+            guidance = sw(PROP_GUIDANCE, PREF_GUIDANCE, d.guidance),
+            voiceCommands = sw(PROP_VOICE_COMMANDS, PREF_VOICE_COMMANDS, d.voiceCommands),
+            recalibrateCard = sw(PROP_RECALIBRATE_CARD, PREF_RECALIBRATE_CARD, d.recalibrateCard),
+            segmentation = sw(PROP_SEGMENTATION, PREF_OBJECT_BOXES, d.segmentation),
+            recordImu = sw(PROP_RECORD_IMU, PREF_RECORD_IMU, d.recordImu),
         )
     }
 
@@ -108,16 +137,15 @@ object FeatureFlags {
     fun showInstruction(type: String, guidance: Boolean): Boolean = guidance || type in SAFETY_INSTRUCTIONS
 
     /**
-     * Understanding level to pass: the [override] when set (including 0), else [DEFAULT_UNDERSTANDING_WITH_DETECTOR]
-     * when [detectorWillRun], else null (no key: the core default, off). Without a detector, level 1 would only add
-     * geometry-only outputs, so the session is left exactly as before.
+     * Understanding level to pass: the [override] when set (including 0), else [DEFAULT_UNDERSTANDING] when [guidedScan]
+     * (everything but the unguided research control arm), else null (no key: the core default, off).
      */
-    fun understandingFor(override: Int?, detectorWillRun: Boolean): Int? =
-        override ?: if (detectorWillRun) DEFAULT_UNDERSTANDING_WITH_DETECTOR else null
+    fun understandingFor(override: Int?, guidedScan: Boolean): Int? =
+        override ?: if (guidedScan) DEFAULT_UNDERSTANDING else null
 
     /**
      * Extra session config for [SessionManager.start]: `guide.understanding` is passed explicitly whenever a level is
-     * given (including 0), null = no key; `record_imu` = 1 only when [recordImu] (the core default is lean: no IMU).
+     * given (including 0), null = no key; `record_imu` = 1 only when [recordImu] (the core default is lean: no IMU, so the app asks for it).
      */
     fun extraConfig(understanding: Int?, recordImu: Boolean = false): Map<String, Any> =
         buildMap {

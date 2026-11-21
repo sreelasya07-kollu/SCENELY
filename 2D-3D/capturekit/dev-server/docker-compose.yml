@@ -39,7 +39,9 @@ services:
 
   # Marks a bundle COMPLETE/INCOMPLETE/CORRUPT from what is in the bucket (never from hook events).
   verifier:
-    build: ./verifier
+    build:
+      context: ..   # capturekit/: the image carries tools/ckit + spec/scanbundle for server-side validation
+      dockerfile: dev-server/verifier/Dockerfile
     depends_on:
       minio-init:
         condition: service_completed_successfully
@@ -48,6 +50,9 @@ services:
       S3_BUCKET: scanbundles
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-capturekit}
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-capturekit-dev-only}
+      JOBS_URL: ${JOBS_URL:-}   # e.g. http://host.docker.internal:8090 (job service on the host); empty = no trigger
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # needed on Linux/WSL; built in on Docker Desktop
     ports:
       - "8081:8081"
     restart: unless-stopped

@@ -31,46 +31,45 @@ class SegImage(
     }
 }
 
-/** One model mask over the WHOLE camera image (the image is squashed to the model input): [bits] row-major, 1 = inside. */
-class MaskBits(val w: Int, val h: Int, val bits: ByteArray, val score: Float)
+/**
+ * One segmented object of one run, in camera-image pixels (sensor orientation): [coco] = COCO category id, [box] the model
+ * box, ([cx], [cy]) the centroid of its mask (the pixel the 3D centre is cast through). Masks themselves are not kept (never drawn).
+ */
+class Instance(val coco: Int, val label: String, val score: Float, val box: Box2, val cx: Float, val cy: Float)
 
-/** A mask with its remembered track; ([cx], [cy]) = mask centroid, normalised 0..1 over the camera image (label anchor). */
-class SegMask(val track: Track, val mask: MaskBits, val cx: Float, val cy: Float)
+/** One segmentation run: the camera at capture time (for the hit-test ray and the box scaling) and its instances. Never saved to the bundle. */
+class SegResult(val tNs: Long, val camera: CameraSnapshot, val instances: List<Instance>)
 
-/** One segmentation run: the camera at capture time (for the pose warp between runs) and its masks. Never saved to the bundle. */
-class SegResult(val tNs: Long, val camera: CameraSnapshot, val masks: List<SegMask>)
-
-/** One run's input: the image, the camera it was taken with and the prompts projected into it. */
-class SegJob(val tNs: Long, val image: SegImage, val camera: CameraSnapshot, val prompts: List<SegPrompt>)
+/** One run's input: the image, the camera it was taken with and [quarterTurns] (clockwise) that make the image upright for the model. */
+class SegJob(val tNs: Long, val image: SegImage, val camera: CameraSnapshot, val quarterTurns: Int = 0)
 
 /** Where results go (the overlay view). Called on the segmentation thread; must not block. */
 fun interface SegmentationSink {
-    fun onMasks(result: SegResult)
+    fun onResult(result: SegResult)
 }
 
 /**
- * Seam for the model (issue #8) so the worker is JVM-testable. Called on the segmentation thread only.
- * Returns one mask per prompt in the same order (null = nothing for that prompt), or null when the run failed.
+ * Seam for the model (ADR 0035) so the worker is JVM-testable. Promptless: every object the model finds. Called on the
+ * segmentation thread only. Returns the instances (possibly empty), or null when the run failed.
  */
 interface Segmenter : AutoCloseable {
     val name: String
-    fun segment(image: SegImage, prompts: List<SegPrompt>): List<MaskBits?>?
+    fun segment(image: SegImage, quarterTurns: Int): List<Instance>?
     override fun close() {}
 }
 
 /**
- * Runs segmentation off the AR thread (issue #8; same pattern as DetectorScheduler / DetectorWorker). The GL thread asks
- * [shouldCapture] every frame (cheap): at most one run per [minIntervalNs] / ml_rate_scale of frame time (<= 2 Hz at
- * scale 1), only while tracking. Queue size 1: while a job is queued or running, a due frame and any [submit] are
+ * Runs segmentation off the AR thread (ADR 0035; same pattern as DetectorScheduler / DetectorWorker). The GL thread asks
+ * [shouldCapture] every frame (cheap): at most one run per [minIntervalNs] / ml_rate_scale of frame time (<= 5 Hz at
+ * scale 1; guess, tune), only while tracking. Queue size 1: while a job is queued or running, a due frame and any [submit] are
  * dropped, counted ([dropped]) and logged (AGENTS.md B.8). The model is opened lazily on the worker by [open] (null =
- * model missing: the feature turns itself off); after [GIVE_UP_AFTER] consecutive failures the worker disables itself.
- * [TrackMemory] lives on the worker thread and gives every mask its stable track.
+ * model missing or GPU not available: the feature turns itself off, no CPU fallback); after [GIVE_UP_AFTER] consecutive
+ * failures the worker disables itself. Identity (TrackMemory) is applied by the consumer on the GL thread, where the 3D centre is known.
  * Threads: [shouldCapture] from ONE thread (the GL thread); [submit] / [close] from any thread; [post] runs on the worker.
  */
 class SegmentationScheduler(
     private val open: () -> Segmenter?,
     private val sink: SegmentationSink,
-    private val memory: TrackMemory = TrackMemory(),
     minIntervalNs: Long = DEFAULT_INTERVAL_NS,
     private val post: (Runnable) -> Unit,
     private val onClose: () -> Unit = {},
@@ -131,27 +130,15 @@ class SegmentationScheduler(
             if (segmenter == null) { log("segmentation off: model not available", null); disable(); return }
         }
         val seg = segmenter ?: return
-        if (job.prompts.isEmpty()) {   // nothing to segment: no model run, the overlay clears
-            processedCount.incrementAndGet()
-            deliver(SegResult(job.tNs, job.camera, emptyList()))
-            return
-        }
-        val masks = try { seg.segment(job.image, job.prompts) } catch (t: Throwable) { log("segmenter threw", t); null }
-        if (masks == null || masks.size != job.prompts.size) {
+        val found = try { seg.segment(job.image, job.quarterTurns) } catch (t: Throwable) { log("segmenter threw", t); null }
+        if (found == null) {
             failedCount.incrementAndGet()
             if (++failStreak >= GIVE_UP_AFTER) { log("segmenter failed $failStreak times in a row: disabled", null); disable() }
             return
         }
         failStreak = 0
         processedCount.incrementAndGet()
-        val tracks = memory.assign(job.prompts)
-        val out = ArrayList<SegMask>(masks.size)
-        for (i in masks.indices) {
-            val m = masks[i] ?: continue
-            val c = centroid(m) ?: continue
-            out.add(SegMask(tracks[i], m, c.first, c.second))
-        }
-        deliver(SegResult(job.tNs, job.camera, out))
+        deliver(SegResult(job.tNs, job.camera, found))
     }
 
     /** Worker thread: turns the feature off and tells the host once (it hides the overlay and its chip). */
@@ -161,7 +148,7 @@ class SegmentationScheduler(
         try { onDisabled() } catch (t: Throwable) { log("onDisabled threw", t) }
     }
 
-    private fun deliver(r: SegResult) { try { sink.onMasks(r) } catch (t: Throwable) { log("segmentation sink threw", t) } }
+    private fun deliver(r: SegResult) { try { sink.onResult(r) } catch (t: Throwable) { log("segmentation sink threw", t) } }
 
     /** Stops accepting work and releases the model on the worker. Idempotent. */
     override fun close() {
@@ -178,17 +165,8 @@ class SegmentationScheduler(
     companion object {
         private const val TAG = "CK/Segment"
         const val GIVE_UP_AFTER = 5
-        /** <= 2 Hz at ml_rate_scale 1 (the SAM 2.1-tiny encoder alone is ~200 ms on a flagship GPU). */
-        const val DEFAULT_INTERVAL_NS = 500_000_000L
-
-        /** Centroid of the set pixels, normalised 0..1; null for an empty or malformed mask. */
-        fun centroid(m: MaskBits): Pair<Float, Float>? {
-            if (m.w <= 0 || m.h <= 0 || m.bits.size < m.w * m.h) return null
-            var sx = 0L; var sy = 0L; var n = 0L
-            for (yy in 0 until m.h) for (xx in 0 until m.w) if (m.bits[yy * m.w + xx].toInt() != 0) { sx += xx; sy += yy; n++ }
-            if (n == 0L) return null
-            return ((sx.toFloat() / n + 0.5f) / m.w) to ((sy.toFloat() / n + 0.5f) / m.h)
-        }
+        /** <= 5 Hz at ml_rate_scale 1 (guess; the card measured 27 to 58 ms of GPU time per run on phones). */
+        const val DEFAULT_INTERVAL_NS = 200_000_000L
 
         /**
          * Production worker, or null (feature off) when [enabled] is false or the model files are not in the library
@@ -196,14 +174,14 @@ class SegmentationScheduler(
          */
         fun create(context: Context, enabled: Boolean, sink: SegmentationSink, onDisabled: () -> Unit = {}): SegmentationScheduler? {
             if (!enabled) return null
-            if (!LiteRtSam2Segmenter.available(context)) {
-                Log.w(TAG, "segmentation off: model files not packaged (${LiteRtSam2Segmenter.ENCODER_ASSET})")
+            if (!RfDetrSegmenter.available(context)) {
+                Log.w(TAG, "segmentation off: model files not packaged (${RfDetrSegmenter.GRAPH_A})")
                 return null
             }
             val app = context.applicationContext
             val thread = HandlerThread("ck-segment").also { it.start() }
             val handler = Handler(thread.looper)
-            return SegmentationScheduler({ LiteRtSam2Segmenter.open(app) }, sink, post = { handler.post(it) }, onClose = { thread.quitSafely() }, onDisabled = onDisabled)
+            return SegmentationScheduler({ RfDetrSegmenter.open(app) }, sink, post = { handler.post(it) }, onClose = { thread.quitSafely() }, onDisabled = onDisabled)
         }
     }
 }

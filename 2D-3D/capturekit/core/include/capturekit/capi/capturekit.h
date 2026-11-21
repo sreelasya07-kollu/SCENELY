@@ -120,7 +120,9 @@ const char* ck_version(void);
  * keyframe_ack_timeout_s, string metadata (bundle_id, session_id, platform, model, os, app_version,
  * clock_base), consent_version + consent_at (ISO-8601 text, both or neither), redaction_mode
  * ("none" | "faces"), record_imu (0 | 1, default 0: /imu/* are not written, ADR 0034; schema 1.4.0),
- * "quality.<key>" and "governor.<key>" overrides. NULL or "{}" for defaults.
+ * "quality.<key>" and "governor.<key>" overrides, "calib.<key>" stillness calibration (ADR 0036: calib.gyro_bias_x|y|z,
+ * optional calib.drift_x|y|z, calib.duration_s, gyro_rms, accel_norm, accel_std; recorded in the manifest, never
+ * applied). NULL or "{}" for defaults.
  * Creates bundle_dir if needed. Returns NULL on error (status in *err if non-NULL). */
 ck_session* ck_session_create(const char* bundle_dir, const char* config_json, ck_status* err);
 void ck_session_destroy(ck_session* s);

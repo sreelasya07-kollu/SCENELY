@@ -55,6 +55,22 @@ object LabelMap {
         "lamp" to ("lamp" to "lamps"), "door" to ("door" to "doors"), "window" to ("window" to "windows"),
     )
 
+    /**
+     * Core class id for a COCO CATEGORY id (RF-DETR class index, 1-based, ADR 0035). The EfficientDet index of ADR 0017 is
+     * category_id - 1 (chair 61 -> 62), so this is [coreClass] shifted by one. UNVERIFIED on device; a unit test pins chair, couch, tv.
+     */
+    fun fromCocoCategory(categoryId: Int): Int = coreClass(categoryId - 1)
+
+    /** COCO 2017 category names by category id (index = id; "" = unused id), as the live object boxes label them. */
+    private val cocoNames: Array<String> = ("|person|bicycle|car|motorcycle|airplane|bus|train|truck|boat|traffic light|fire hydrant||stop sign|" +
+        "parking meter|bench|bird|cat|dog|horse|sheep|cow|elephant|bear|zebra|giraffe||backpack|umbrella|||handbag|tie|suitcase|frisbee|skis|" +
+        "snowboard|sports ball|kite|baseball bat|baseball glove|skateboard|surfboard|tennis racket|bottle||wine glass|cup|fork|knife|spoon|bowl|" +
+        "banana|apple|sandwich|orange|broccoli|carrot|hot dog|pizza|donut|cake|chair|couch|potted plant|bed||dining table|||toilet||tv|laptop|" +
+        "mouse|remote|keyboard|cell phone|microwave|oven|toaster|sink|refrigerator||book|clock|vase|scissors|teddy bear|hair drier|toothbrush").split("|").toTypedArray()
+
+    /** Display name of a COCO category id; "" for an id COCO does not use. */
+    fun cocoName(categoryId: Int): String = cocoNames.getOrElse(categoryId) { "" }
+
     /** Core class id for a detector class index (a float from the model output), [UNKNOWN] when not mapped. */
     fun coreClass(cocoIndex: Int): Int = cocoToCore[cocoIndex] ?: UNKNOWN
 

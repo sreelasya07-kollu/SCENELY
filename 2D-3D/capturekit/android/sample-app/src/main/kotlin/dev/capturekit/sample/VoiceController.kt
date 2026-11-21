@@ -48,15 +48,13 @@ class VoiceController(
     private val activity: Activity,
     private val speech: SpeechRenderer,
     private val host: Host,
+    /** Pause / resume / repeat / what is missing / volume: the same dispatcher the HUD buttons use (ADR 0036). */
+    private val actions: ScanActions,
 ) {
     /** The scan screen's side of the contract. All calls happen on the main thread. */
     interface Host {
-        fun isPaused(): Boolean
-        fun pauseScan()
-        fun resumeScan()
         /** Called only after the user confirmed (tap or spoken yes). */
         fun finishConfirmed()
-        fun snapshot(): ScanStateSnapshot?
         /** Short message under the top bar; null clears it. */
         fun feedback(text: String?)
         /** [micState] or [available] changed: refresh the chip. */
@@ -369,30 +367,10 @@ class VoiceController(
 
     private fun act(intent: VoiceIntent) {
         onIntent(intent)
-        when (intent) {
-            VoiceIntent.PAUSE ->
-                if (host.isPaused()) showFeedback("Already paused.", 3_000) else { host.pauseScan(); showFeedback("Paused.", 3_000) }
-            VoiceIntent.RESUME ->
-                if (!host.isPaused()) showFeedback("Already scanning.", 3_000) else { host.resumeScan(); showFeedback("Resuming.", 3_000) }
-            VoiceIntent.REPEAT -> {
-                val last = speech.repeatLast()
-                if (!last) showFeedback(if (!speech.enabled) "Voice guidance is off. Turn it on to hear it again." else "Nothing to repeat yet.", 4_000)
-            }
-            VoiceIntent.MISSING -> {
-                val a = StateAnswers.answer(StateAnswers.questionFor(intent), host.snapshot())
-                showFeedback(a.text, 9_000)   // always visible, also when voice guidance is muted
-                speech.say(a.text)
-            }
-            VoiceIntent.FINISH -> confirmFinish()
-            VoiceIntent.LOUDER -> volume(speech.louder(), "Louder.", "Already at the loudest.")
-            VoiceIntent.QUIETER -> volume(speech.quieter(), "Quieter.", "Already at the quietest.")
-        }
-    }
-
-    private fun volume(changed: Boolean, done: String, limit: String) {
-        val msg = if (changed) done else limit
-        showFeedback(msg, 3_000)
-        speech.say(msg, remember = false)   // spoken at the new level so the change is audible
+        val kind = ScanActions.kindOf(intent)
+        if (kind == null) { confirmFinish(); return }   // FINISH: yes/no first, then the Finish path
+        val o = actions.run(kind)
+        o.text?.let { showFeedback(it, o.ms) }
     }
 
     private fun confirmFinish() {

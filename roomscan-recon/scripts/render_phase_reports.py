@@ -189,6 +189,9 @@ def phases():
             [
                 "Unfiltered MVS depth on TUM misses the target (AbsRel 0.130); the confidence cutoff is part of the method.",
                 "Hybrid MVS+mono fill (R8) did not beat MVS alone; mono stays a fallback only.",
+                "No bilateral depth smoothing: scale/shift is smoothed only by a temporal log-scale median (spatial/depth/align.py:smooth_scales).",
+                "Depth cleaning is edge/range masks plus a geometric multi-view consistency filter (spatial/depth/masks.py, consistency.py); there is no photometric-consistency check.",
+                "All numbers are CPU. CUDA fusion and GPU inference parity (P3-08, P3-12) are unverified.",
             ],
         ),
         4: (
@@ -281,7 +284,10 @@ def phases():
                     18.0,
                 ),
             ],
-            [],
+            [
+                "ETH3D dense / mesh F@5cm and textured PSNR stay PENDING: the full-resolution OpenMVS run was killed twice by out-of-memory on the 15 GB machine (P7-02, P7-03; T-021).",
+                "RefineMesh has never been run. Poisson is only a fallback when OpenMVS is unavailable.",
+            ],
         ),
         9: (
             "Gaussian splats",
@@ -291,7 +297,8 @@ def phases():
                 check("Held-out LPIPS", None, "<=", 0.30),
             ],
             [
-                "Needs CUDA: the trainer is written but has never been run. CPU parts (init, PLY layout, dataset conventions) are tested."
+                "Needs CUDA: the trainer (recon/splat/train.py, gsplat 1.5.3) is written but has never been run on a GPU. CPU parts (init, PLY layout, dataset conventions) are tested.",
+                "gsplat compiles its CUDA kernels on first use (JIT); that time is unmeasured. The only GPU test trains 7000 steps at half resolution on the ETH3D SpatialMap; 30k-step runs on other scenes are not scripted (P8-01).",
             ],
         ),
         10: (
@@ -302,7 +309,11 @@ def phases():
                 ),
                 check("Replica e2e: peak RAM [MB]", g(p10, "peak_ram_mb"), "<", 12000),
             ],
-            ["Splat entry is 'skipped' on this machine (no CUDA), by design."],
+            [
+                "Splat entry is 'skipped' on this machine (no CUDA), by design.",
+                "`python -m recon.cli run` is rejected: recon.cli has a single command, so the working form is `python -m recon.cli --spatial-map ...` (T-030).",
+                "Exports outside this table: LAZ has RGB but no normals (export/pointcloud.py:write_laz); `.usdz` needs an external `usdzip` (export/usd.py, T-012); QA has no separate camera angular-spread gate (per-cell ray spread only, qa/coverage.py).",
+            ],
         ),
     }
 

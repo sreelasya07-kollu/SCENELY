@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <set>
 
 #include "capturekit/bundle/codec.hpp"
@@ -49,6 +50,7 @@ std::optional<SessionConfig> SessionConfig::from_json(std::string_view text, std
   auto obj = json::parse_flat(text, err);
   if (!obj) return std::nullopt;
   json::Object q, g, gd;
+  std::map<std::string, double> calib_keys;  // "calib.<name>" -> value, validated after the loop
   auto num = [](const json::FlatValue& v) -> std::optional<double> {
     if (auto* d = std::get_if<double>(&v)) return *d;
     if (auto* b = std::get_if<bool>(&v)) return *b ? 1.0 : 0.0;
@@ -60,6 +62,7 @@ std::optional<SessionConfig> SessionConfig::from_json(std::string_view text, std
     if (k.rfind("quality.", 0) == 0 && n) q.set(k.substr(8), *n);
     else if (k.rfind("governor.", 0) == 0 && n) g.set(k.substr(9), *n);
     else if (k.rfind("guide.", 0) == 0 && n) gd.set(k.substr(6), *n);
+    else if (k.rfind("calib.", 0) == 0 && n && std::isfinite(*n)) calib_keys[k.substr(6)] = *n;
     else if (k == "threaded" && n) c.threaded = *n != 0;
     else if (k == "frame_slots" && n) c.frame_slots = std::max(1, int(*n));
     else if (k == "queue_capacity" && n) c.queue_capacity = size_t(std::max(16.0, *n));
@@ -88,6 +91,51 @@ std::optional<SessionConfig> SessionConfig::from_json(std::string_view text, std
       if (err) *err = "unknown or mistyped session config key: " + k;
       return std::nullopt;
     }
+  }
+  if (!calib_keys.empty()) {
+    // Contract C1 (ADR 0036): known keys only; the bias triple and the four scalars are required, the drift triple is
+    // optional but whole. Unknown names are errors like every other unknown session key.
+    static const char* kBias[3] = {"gyro_bias_x", "gyro_bias_y", "gyro_bias_z"};
+    static const char* kDrift[3] = {"drift_x", "drift_y", "drift_z"};
+    static const char* kScalars[4] = {"duration_s", "gyro_rms", "accel_norm", "accel_std"};
+    std::set<std::string> known;
+    for (auto* s : kBias) known.insert(s);
+    for (auto* s : kDrift) known.insert(s);
+    for (auto* s : kScalars) known.insert(s);
+    for (auto& [name, v] : calib_keys) {
+      (void)v;
+      if (!known.count(name)) {
+        if (err) *err = "unknown or mistyped session config key: calib." + name;
+        return std::nullopt;
+      }
+    }
+    auto count = [&](const char* const* names, size_t n) {
+      size_t have = 0;
+      for (size_t i = 0; i < n; ++i) have += calib_keys.count(names[i]);
+      return have;
+    };
+    if (count(kBias, 3) != 3) {
+      if (err) *err = "calib.gyro_bias_x, calib.gyro_bias_y and calib.gyro_bias_z must be given together";
+      return std::nullopt;
+    }
+    size_t drift_have = count(kDrift, 3);
+    if (drift_have != 0 && drift_have != 3) {
+      if (err) *err = "calib.drift_x, calib.drift_y and calib.drift_z must be given together";
+      return std::nullopt;
+    }
+    if (count(kScalars, 4) != 4) {
+      if (err) *err = "calib.duration_s, calib.gyro_rms, calib.accel_norm and calib.accel_std are required with calib.gyro_bias_*";
+      return std::nullopt;
+    }
+    StillnessCalibration sc;
+    for (int i = 0; i < 3; ++i) sc.gyro_bias[i] = calib_keys[kBias[i]];
+    sc.has_drift = drift_have == 3;
+    if (sc.has_drift) for (int i = 0; i < 3; ++i) sc.drift[i] = calib_keys[kDrift[i]];
+    sc.duration_s = calib_keys["duration_s"];
+    sc.gyro_rms = calib_keys["gyro_rms"];
+    sc.accel_norm = calib_keys["accel_norm"];
+    sc.accel_std = calib_keys["accel_std"];
+    c.calib = sc;
   }
   if (c.meta.consent_version.empty() != c.meta.consent_at.empty()) {
     if (err) *err = "consent_version and consent_at must be given together";
@@ -137,6 +185,20 @@ std::unique_ptr<Session> Session::create(const std::string& dir, const SessionCo
       .raw("guide_config", cfg.guide.to_json())
       .set("guide_config_hash", cfg.guide.hash())
       .set("record_imu", cfg.record_imu);
+  if (cfg.calib) {
+    // Contract C1 (ADR 0036): the measurement is recorded, never applied. Part 2 / the iOS port read it.
+    const auto& sc = *cfg.calib;
+    auto vec3 = [](const double* v) { return "[" + json::num(v[0]) + "," + json::num(v[1]) + "," + json::num(v[2]) + "]"; };
+    json::Object cal;
+    cal.raw("gyro_bias_rad_s", vec3(sc.gyro_bias));
+    if (sc.has_drift) cal.raw("platform_drift_rad_s", vec3(sc.drift));
+    cal.set("duration_s", sc.duration_s)
+        .set("gyro_rms_rad_s", sc.gyro_rms)
+        .set("accel_norm_mean_m_s2", sc.accel_norm)
+        .set("accel_norm_std_m_s2", sc.accel_std)
+        .set("imu_frame", "device");
+    settings.set("stillness_calibration", cal);
+  }
   cfg.meta.capture_settings_json = settings.dump();
 
   std::unique_ptr<Session> s(new Session(dir, cfg));

@@ -31,6 +31,8 @@ dependencies = [
     "torch>=2.14",        # flavour chosen via extra below
     "ezdxf>=1.4",
     "laspy[lazrs]>=2.5",
+    "mcap==1.6.0",        # Scan Bundle v1.x streams.mcap (ADR 003)
+    "protobuf>=3.20.3,<6",  # decodes MCAP messages from the embedded schema (ADR 003)
 ]
 
 [project.optional-dependencies]
@@ -44,7 +46,7 @@ dev = ["pytest>=9.2.0", "ruff>=0.17.4"]
 data = ["remotezip>=0.12.6", "h5py>=3.16"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["spatial", "recon", "formats", "eval", "router", "qa", "export"]
+packages = ["spatial", "recon", "formats", "eval", "router", "qa", "export", "jobs"]
 
 [tool.uv]
 conflicts = [[{ extra = "cpu" }, { extra = "cu126" }, { extra = "cu130" }]]

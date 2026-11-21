@@ -24,3 +24,5 @@ gyro ring feeds `blur_risk_px` (quality) and the tracking-recovery steadiness ch
 - Replay of a lean bundle has no gyro, so `blur_risk_px` is not recomputed there; the decisions the device took are in `/frame_index`.
 - Archive: one `scan_<id>.zip` (JPEGs stored, everything else deflated, entries sorted, fixed timestamps: the same bundle always packs to the same bytes). `ckit pack` creates it, verifies it (every entry's size and sha256 against `manifest.files`, then the full validator on the archive) and only then may delete the loose folder (`--delete-source`). `ckit validate`, `replay`, `recon-bench` and the other readers accept `.zip` as well as a folder.
 - Stage 2 (not in this PR): the Android shell packs at Finish, My scans / Review / upload read the archive, the tus client and the dev-server verifier take a single zip. It is separate because upload has never run on a device (docs/STATUS.md section 0) and the verifier needs the docker setup to test.
+
+Update 2026-11-22: the Android app now defaults `record_imu` to 1 (ADR 0036); the core default stays 0 and the 1.4.0 lean stamping still applies whenever `record_imu=0`.

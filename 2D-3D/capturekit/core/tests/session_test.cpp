@@ -1029,3 +1029,75 @@ TEST(SessionLeanBundle, SessionJsonFromBeforeTheChangeRecoversAsAnImuBundle) {
   EXPECT_GT(r.c.gyro.size(), 100u);
   EXPECT_NE(r.manifest.find("\"schema_version\": \"1.1.0\""), std::string::npos) << r.manifest.substr(0, 160);
 }
+
+// ADR 0036 (contract C1): the shell's pre-scan stillness measurement is recorded in the manifest, never applied.
+namespace {
+const char* kCalibAll =
+    "\"calib.gyro_bias_x\":0.001, \"calib.gyro_bias_y\":-0.002, \"calib.gyro_bias_z\":0.003, \"calib.duration_s\":2.1, "
+    "\"calib.gyro_rms\":0.004, \"calib.accel_norm\":9.81, \"calib.accel_std\":0.01";
+const char* kCalibDrift = "\"calib.drift_x\":0.001, \"calib.drift_y\":0.002, \"calib.drift_z\":-0.003";
+bool calib_rejected(const std::string& cfg, std::string* err = nullptr) {
+  std::string e;
+  auto c = capturekit::session::SessionConfig::from_json(cfg, &e);
+  if (err) *err = e;
+  return !c.has_value();
+}
+}  // namespace
+
+TEST(SessionCalibration, ParsesTheKeysAndTheOptionalDriftTriple) {
+  std::string cfg = std::string("{") + kCalibAll + "}";
+  auto c = capturekit::session::SessionConfig::from_json(cfg, nullptr);
+  ASSERT_TRUE(c.has_value());
+  ASSERT_TRUE(c->calib.has_value());
+  EXPECT_DOUBLE_EQ(c->calib->gyro_bias[1], -0.002);
+  EXPECT_DOUBLE_EQ(c->calib->accel_norm, 9.81);
+  EXPECT_FALSE(c->calib->has_drift);
+  auto d = capturekit::session::SessionConfig::from_json(std::string("{") + kCalibAll + "," + kCalibDrift + "}", nullptr);
+  ASSERT_TRUE(d.has_value() && d->calib.has_value());
+  EXPECT_TRUE(d->calib->has_drift);
+  EXPECT_DOUBLE_EQ(d->calib->drift[2], -0.003);
+  EXPECT_FALSE(capturekit::session::SessionConfig::from_json("{}", nullptr)->calib.has_value());
+}
+
+TEST(SessionCalibration, PartialTriplesMissingScalarsAndUnknownNamesAreRejected) {
+  std::string err;
+  // Partial gyro_bias triple.
+  EXPECT_TRUE(calib_rejected("{\"calib.gyro_bias_x\":0.1, \"calib.gyro_bias_y\":0.1, \"calib.duration_s\":2, \"calib.gyro_rms\":0, "
+                             "\"calib.accel_norm\":9.8, \"calib.accel_std\":0}", &err));
+  EXPECT_NE(err.find("gyro_bias"), std::string::npos) << err;
+  // Partial drift triple.
+  EXPECT_TRUE(calib_rejected(std::string("{") + kCalibAll + ", \"calib.drift_x\":0.1}", &err));
+  EXPECT_NE(err.find("drift"), std::string::npos) << err;
+  // Bias given without the scalars.
+  EXPECT_TRUE(calib_rejected("{\"calib.gyro_bias_x\":0, \"calib.gyro_bias_y\":0, \"calib.gyro_bias_z\":0}", &err));
+  // Scalars without the bias triple.
+  EXPECT_TRUE(calib_rejected("{\"calib.duration_s\":2}", &err));
+  // Unknown calib key, mistyped (string) value, and still no other unknown key slips through.
+  EXPECT_TRUE(calib_rejected(std::string("{") + kCalibAll + ", \"calib.nope\":1}", &err));
+  EXPECT_NE(err.find("calib.nope"), std::string::npos) << err;
+  EXPECT_TRUE(calib_rejected("{\"calib.gyro_bias_x\":\"a\"}", &err));
+  EXPECT_TRUE(calib_rejected("{\"nope\":1}", &err));
+}
+
+TEST(SessionCalibration, ManifestHoldsTheObjectAndARecoveredBundleKeepsIt) {
+  std::string cfg = std::string("{\"threaded\":0, \"platform\":\"test\", ") + kCalibAll + "," + kCalibDrift + "}";
+  for (bool killed : {false, true}) {
+    auto r = imu_run(killed ? "calib_killed" : "calib_done", cfg.c_str(), killed);
+    auto at = r.manifest.find("\"stillness_calibration\":{");
+    ASSERT_NE(at, std::string::npos) << r.manifest.substr(0, 400);
+    auto obj = r.manifest.substr(at, 400);
+    EXPECT_NE(obj.find("\"gyro_bias_rad_s\":[0.001,-0.002,0.003]"), std::string::npos) << obj;
+    EXPECT_NE(obj.find("\"platform_drift_rad_s\":[0.001,0.002,-0.003]"), std::string::npos) << obj;
+    EXPECT_NE(obj.find("\"duration_s\":2.1"), std::string::npos) << obj;
+    EXPECT_NE(obj.find("\"gyro_rms_rad_s\":0.004"), std::string::npos) << obj;
+    EXPECT_NE(obj.find("\"accel_norm_mean_m_s2\":9.81"), std::string::npos) << obj;
+    EXPECT_NE(obj.find("\"accel_norm_std_m_s2\":0.01"), std::string::npos) << obj;
+    EXPECT_NE(obj.find("\"imu_frame\":\"device\""), std::string::npos) << obj;
+  }
+  // Without drift the key is absent; without calib there is no object at all.
+  auto nodrift = imu_run("calib_nodrift", (std::string("{\"threaded\":0, \"platform\":\"test\", ") + kCalibAll + "}").c_str());
+  EXPECT_NE(nodrift.manifest.find("\"stillness_calibration\""), std::string::npos);
+  EXPECT_EQ(nodrift.manifest.find("platform_drift_rad_s"), std::string::npos);
+  auto none = imu_run("calib_none", "{\"threaded\":0, \"platform\":\"test\"}");
+  EXPECT_EQ(none.manifest.find("stillness_calibration"), std::string::npos);
+}

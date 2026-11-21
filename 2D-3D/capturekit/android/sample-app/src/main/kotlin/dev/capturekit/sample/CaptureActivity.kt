@@ -11,12 +11,17 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import dev.capturekit.capture.ARAdapter
+import dev.capturekit.capture.CalibrationCard
+import dev.capturekit.capture.CalibrationUi
+import dev.capturekit.capture.StillnessCalibrator
+import dev.capturekit.capture.StillnessSensors
 import dev.capturekit.capture.CoreEvent
 import dev.capturekit.capture.DetectedBox
 import dev.capturekit.capture.LiteRtKeyframeDetector
 import dev.capturekit.capture.Policy
 import dev.capturekit.capture.SensorBridge
 import dev.capturekit.capture.SessionManager
+import dev.capturekit.guidance.Completeness
 import dev.capturekit.guidance.Recalibration
 import dev.capturekit.guidance.ScanStateSnapshot
 import dev.capturekit.nativebridge.Status
@@ -34,10 +39,9 @@ import java.util.Locale
 /**
  * Guided scan screen: a real core session (quality, keyframe selection, governor, guidance) over the live
  * camera image with a friendly HUD. Features not yet verified on a device are switched off by [FeatureFlags]
- * (ADR 0032; debug builds can switch them on): with `detector` on, the 2D detector's boxes are drawn over the camera feed
- * ([DetectionOverlayView], "Boxes" chip) and the core lifts them to the labelled objects of the review screen; with
- * `segmentation` on (and the model packaged) translucent object / surface masks replace the boxes ([MaskOverlayView],
- * "Masks" chip; issue #8, never saved). Core instructions (only safety/tracking ones unless `guidance` is on) are shown (speak_text as coaching,
+ * (ADR 0032; debug builds can switch them on): with `detector` on, the 2D detector labels keyframes for the core, which lifts
+ * them to the labelled objects of the review screen; with `segmentation` on (default, ADR 0035; needs the fetched model) live
+ * green object boxes with per-scan memory follow the camera ([ObjectBoxOverlayView], "Boxes" chip; never saved). Core instructions (only safety/tracking ones unless `guidance` is on) are shown (speak_text as coaching,
  * long_text as subtitle), spoken verbatim by [SpeechRenderer] and mapped to haptics. Finish hands over to [ReviewActivity].
  * Bundles land in getExternalFilesDir("bundles"); interrupted sessions are recovered on the next launch.
  * Pull with: adb pull /sdcard/Android/data/dev.capturekit.sample/files/bundles
@@ -45,9 +49,8 @@ import java.util.Locale
 class CaptureActivity : Activity(), SessionManager.Listener {
     private lateinit var ar: ArHost
     private lateinit var hud: Hud
-    private lateinit var boxView: DetectionOverlayView
-    private lateinit var maskView: MaskOverlayView
-    /** Issue #8 segmentation for this scan; null when the flag is off, the model is missing, or not scanning. */
+    private lateinit var objectView: ObjectBoxOverlayView
+    /** Live segmentation for this scan; null when the flag is off, the model is missing, or not scanning. */
     private var segmentation: SegmentationScheduler? = null
     @Volatile private var segFeed: SegmentationFeed? = null   // read on the GL and core event threads
     private lateinit var speech: SpeechRenderer
@@ -91,15 +94,26 @@ class CaptureActivity : Activity(), SessionManager.Listener {
     private var reviewDialog: android.app.Dialog? = null
     private var arMessage: String? = null
     private var recovering = true
+    /** Pre-scan hold-still calibration (ADR 0036): runs from onResume until READY; its frozen result goes into the session config. */
+    private var calib: StillnessCalibrator? = null
+    private var calibSensors: StillnessSensors? = null
+    private var calibResult: StillnessCalibrator.Result? = null
+    private var calibNoSensors = false
     private var recoveredNote: String? = null
 
-    /** What voice commands may do on this screen (main thread only). */
-    private val voiceHost = object : VoiceController.Host {
+    /** What the action buttons AND the voice commands may do on this screen (main thread only): one dispatcher, [ScanActions]. */
+    private val scanHost = object : ScanActions.Host {
         override fun isPaused() = corePaused
         override fun pauseScan() { if (recording && !corePaused) togglePause() }
         override fun resumeScan() { if (recording && corePaused) togglePause() }
-        override fun finishConfirmed() { stop() }   // same path as the Finish button (review sheet when a wall is weak)
         override fun snapshot() = overlay?.let { ScanStateSnapshot.fromOverlay(it) }
+    }
+    private val scanActions by lazy { ScanActions(speech, scanHost) }
+    private val clearActionLine = Runnable { hud.setVoiceLine(null) }
+
+    /** What voice commands may do on this screen beyond [ScanActions] (main thread only). */
+    private val voiceHost = object : VoiceController.Host {
+        override fun finishConfirmed() { stop() }   // same path as the Finish button (review sheet when a wall is weak)
         override fun feedback(text: String?) { hud.setVoiceLine(text) }
         override fun voiceStateChanged() = refreshMic()
     }
@@ -125,32 +139,34 @@ class CaptureActivity : Activity(), SessionManager.Listener {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         speech = SpeechRenderer(this)
-        boxView = DetectionOverlayView(this)   // before ArHost: its frame callback maps the boxes
-        maskView = MaskOverlayView(this)       // same: its frame callback warps the masks
+        objectView = ObjectBoxOverlayView(this)   // before ArHost: its frame callback projects the boxes
         ar = ArHost(this) { frame ->
             if (!arActive) return@ArHost   // no Frame use once onPause started tearing the Session down
             adapter?.onFrame(frame)
             trackState = frame.camera.trackingState.name
             trackFailure = frame.camera.trackingFailureReason.name
-            boxView.onArFrame(frame)   // cheap no-op unless a new keyframe's boxes arrived
-            // Segmentation (issue #8): one rate check per frame; a due frame is copied and handed to the worker.
+            // Segmentation (ADR 0035): one rate check per frame; a due frame is copied and handed to the worker.
             val p = lastPolicy
-            if (recording && !corePaused && !finishing && p?.mustPause != true) segFeed?.onArFrame(frame, ar.session, p?.mlRateScale ?: 1.0)
-            maskView.onArFrame(frame)  // cheap no-op without masks
+            if (recording && !corePaused && !finishing && p?.mustPause != true) segFeed?.onArFrame(frame, p?.mlRateScale ?: 1.0)
+            if (recording && !corePaused) objectView.onArFrame(frame, ar.session, overlay?.objects ?: emptyList())   // hit test + projection
         }
         ar.onError = { msg -> arMessage = msg; refresh() }
         hud = Hud(this, features)
         hud.pauseEnabled = true
         hud.button.setOnClickListener { if (session == null) start() else stop() }
         hud.pauseButton.setOnClickListener { togglePause() }
+        hud.onAction = { k ->
+            if (recording && !finishing) {
+                val o = scanActions.run(k)
+                if (o.text != null) { hud.setVoiceLine(o.text); ui.removeCallbacks(clearActionLine); ui.postDelayed(clearActionLine, o.ms) }
+            }
+        }
         hud.onVoiceToggle = { speech.enabled = !speech.enabled; hud.setVoice(speech.enabled) }
-        if (features.detector) hud.onBoxesToggle = { boxView.showBoxes = !boxView.showBoxes; hud.setBoxes(boxView.showBoxes) }
-        else boxView.visibility = android.view.View.GONE
-        if (features.segmentation) hud.onMasksToggle = { maskView.showMasks = !maskView.showMasks; hud.setMasks(maskView.showMasks) }
-        else maskView.visibility = android.view.View.GONE
+        if (features.segmentation) hud.onBoxesToggle = { objectView.showBoxes = !objectView.showBoxes; hud.setBoxes(objectView.showBoxes) }
+        else objectView.visibility = android.view.View.GONE
         research = ResearchLog(this)
         if (features.voiceCommands) {
-            val v = VoiceController(this, speech, voiceHost)
+            val v = VoiceController(this, speech, voiceHost, scanActions)
             v.onIntent = { research.onIntent(it.name) }
             hud.onMicClick = { v.onMicTapped() }
             voice = v
@@ -160,8 +176,7 @@ class CaptureActivity : Activity(), SessionManager.Listener {
         hud.setCoaching("Press Start, then move slowly around the room")
         setContentView(FrameLayout(this).apply {
             addView(ar.view, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            addView(maskView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)   // same frame as ar.view
-            addView(boxView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)   // same frame as ar.view
+            addView(objectView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)   // same frame as ar.view
             addView(hud.root, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         })
         if (!CameraPermission.granted(this)) CameraPermission.request(this)
@@ -173,7 +188,7 @@ class CaptureActivity : Activity(), SessionManager.Listener {
                 recovering = false
                 recoveredNote = if (recovered.isEmpty()) null else "Recovered ${recovered.size} interrupted session(s)"
                 hud.setDetail(recoveredNote)
-                hud.button.isEnabled = session == null
+                refresh()   // Start is enabled there: needs the hold-still calibration and tracking too
             }
         }.start()
     }
@@ -189,6 +204,8 @@ class CaptureActivity : Activity(), SessionManager.Listener {
 
     private fun startScan() {
         if (session != null || finishing) return
+        val calibration = calibResult
+        if (calibration == null) { hud.setBanner("Hold the phone still for a moment before starting.", UiKit.Kind.WARN); return }
         // Consent keys (consent_version + consent_at + redaction_mode) are always passed together; no consent, no scan.
         val consentCfg = dev.capturekit.consent.ConsentStore.get(this).sessionConfig()
         if (consentCfg == null) {
@@ -199,15 +216,15 @@ class CaptureActivity : Activity(), SessionManager.Listener {
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val dir = File(getExternalFilesDir("bundles"), "scan_$stamp")
         // Detector off by default (ADR 0032); debug builds can override: `adb shell setprop debug.capturekit.detector 1` and
-        // `debug.capturekit.understanding 0|1|2`. With no understanding override, a running detector gets level 1 (objects);
-        // with the detector off and no override there is no `guide.understanding` key (no /ar/detections, no /guide/ objects).
+        // `debug.capturekit.understanding 0|1|2`. With no understanding override a guided scan gets level 2 (ADR 0036: objects
+        // when the detector runs, plus the gaps that feed the completeness card).
         val detector = features.detector
         val detectorWillRun = detector && LiteRtKeyframeDetector.available(this)
         // The unguided trial arm is the no-guidance control: no understanding by default (detections are still recorded).
-        val understanding = FeatureFlags.understandingFor(features.understanding, detectorWillRun && !research.unguided)
+        val understanding = FeatureFlags.understandingFor(features.understanding, !research.unguided)
         val s = SessionManager(this, dir, listener = this, detectorEnabled = detector)
         // 8 core frame slots (default 4): absorbs ~800 ms worker stalls at 10 candidates/s before ErrFull.
-        if (!s.start(mapOf<String, Any>("frame_slots" to 8) + consentCfg + FeatureFlags.extraConfig(understanding, features.recordImu))) {
+        if (!s.start(mapOf<String, Any>("frame_slots" to 8) + consentCfg + FeatureFlags.extraConfig(understanding, features.recordImu) + calibration.toSessionConfig())) {
             hud.setBanner("Could not start the capture session. Check free storage and try again.", UiKit.Kind.ERROR)
             return
         }
@@ -215,21 +232,19 @@ class CaptureActivity : Activity(), SessionManager.Listener {
         ar.stats = s.stats
         objectsExpected = s.detectorActive && (understanding ?: 0) >= 1
         if (detectorWillRun && !s.detectorActive) Log.w(TAG, "detector model packaged but the detector did not start")
-        boxView.clear()
-        hud.setBoxes(if (s.detectorActive && !research.unguided) boxView.showBoxes else null)
-        // Issue #8: off by default and off when the model files are missing (create returns null); not in the unguided arm.
-        // Objects need the detector (core overlay objects); without it the masks show floor / walls / ceiling only.
+        objectView.reset()
+        // ADR 0035: on by default, off when the model files are missing or the GPU cannot run them (create / open give null); not in the unguided arm.
         var seg: SegmentationScheduler? = null
         seg = if (research.unguided) null else SegmentationScheduler.create(this, features.segmentation,
-            sink = { r -> if (recording && !corePaused && !finishing) maskView.setResult(r) },
-            // The worker turned itself off (model would not load / kept failing): drop the masks chip, bring the boxes back.
+            sink = { r -> if (recording && !corePaused && !finishing) objectView.setResult(r) },
+            // The worker turned itself off (model would not load / kept failing): drop the boxes chip.
             onDisabled = { runOnUiThread { if (segmentation != null && segmentation === seg) segmentationFailed() } })
         segmentation = seg
         segFeed = seg?.let { SegmentationFeed(it) }
-        maskView.clear()
-        hud.setMasks(if (seg != null) maskView.showMasks else null)   // replaces the boxes chip while shown
+        hud.setBoxes(if (seg != null) objectView.showBoxes else null)
         ar.recording = true
         adapter = ARAdapter(s, 0L) { ar.session }
+        stopCalibration()
         sensors = SensorBridge(this, s).also { it.start() }
         thermal = ThermalAdapter(this) { p -> pushPlatform(s, p) }.also { it.start() }
         keyframes = 0; overlay = null; lastQuality = -1.0; lastReasons = emptyList()
@@ -241,6 +256,7 @@ class CaptureActivity : Activity(), SessionManager.Listener {
         applyTrial()
         hud.setResult(null)
         hud.setRecording(true)
+        hud.setActions(!research.unguided)
         hud.setDetail(null)
         hud.setCoaching(scanPrompt())
         hud.haptic(false)
@@ -255,7 +271,7 @@ class CaptureActivity : Activity(), SessionManager.Listener {
         if (!corePaused) {
             if (s.pause() == Status.OK) {
                 speech.stopNow()
-                boxView.clear(); maskView.clear()
+                objectView.clear()
                 hud.setCoaching("Paused. Press Resume when you are ready")
                 hud.haptic(false)
             }
@@ -287,7 +303,7 @@ class CaptureActivity : Activity(), SessionManager.Listener {
         }
         speech.stopNow()
         hud.haptic(false)
-        reviewDialog = ReviewSheet.show(this, room, features.guidance, features.detector,
+        reviewDialog = ReviewSheet.show(this, room, features.guidance, features.detector, Completeness.compute(room, objectView.live),
             onGaps = {
                 if (reviewDialog == null) return@show   // one-shot: resume runs once
                 reviewDialog = null
@@ -307,7 +323,6 @@ class CaptureActivity : Activity(), SessionManager.Listener {
         sensors?.stop(); thermal?.stop(); adapter = null
         hud.button.isEnabled = false
         hud.pauseButton.isEnabled = false
-        boxView.clear(); hud.setBoxes(null)
         closeSegmentation()
         synchronized(recalLock) { recal = Recalibration() }
         hud.setRecalibrate(null)
@@ -315,15 +330,17 @@ class CaptureActivity : Activity(), SessionManager.Listener {
         recording = false
         ar.recording = false
         hud.setRecording(false)
+        hud.setActions(false)
         hud.setDetail(null)
         hud.setVoiceLine(null)
         hud.setResult("Saving the scan...", UiKit.Kind.INFO)
         hud.setCoaching("Saving. Keep the app open")
         hud.haptic(true)
         val kf = keyframes
-        // Last room snapshot for the Review screen (Intent extras only; no bundle schema change).
+        // Last room snapshot for the Review screen (Intent extras only; no bundle schema change): objects / openings for "Found"
+        // and the completeness summary JSON (contract C3).
         val room = overlay
-        val roomSurfaces = room?.let { RoomView.encodeSurfaces(it.surfaces) }
+        val summaryJson = if (research.unguided) null else Completeness.toJson(Completeness.compute(room, objectView.live))
         Thread {
             val st = s.finish()
             research.end(s.dir, st, kf, elapsed, SystemClock.elapsedRealtime())   // field only; sibling file, after the bundle is closed
@@ -336,14 +353,8 @@ class CaptureActivity : Activity(), SessionManager.Listener {
                     .putExtra(ReviewActivity.EXTRA_KEYFRAMES, kf)
                     .putExtra(ReviewActivity.EXTRA_OBJECTS_EXPECTED, objectsExpected)
                     .apply {
+                        if (summaryJson != null) putExtra(Completeness.EXTRA, summaryJson)
                         if (room != null) {
-                            putExtra(ReviewActivity.EXTRA_SURFACES, roomSurfaces)
-                            putExtra(ReviewActivity.EXTRA_FLOOR, room.floorFound)
-                            putExtra(ReviewActivity.EXTRA_CEILING, room.ceilingFound || room.ceilingSeen)
-                            putExtra(ReviewActivity.EXTRA_WALLS_FOUND, ChecklistView.foundWalls(room))
-                            putExtra(ReviewActivity.EXTRA_SHELL, dev.capturekit.capture.EventParser.encodeShell(room.shell))
-                            putExtra(ReviewActivity.EXTRA_SHELL_CLOSED, room.shellClosed)
-                            putExtra(ReviewActivity.EXTRA_SPANS, dev.capturekit.capture.EventParser.encodeSpans(room.spans))
                             putExtra(ReviewActivity.EXTRA_OBJECTS, dev.capturekit.capture.EventParser.encodeObjects(room.objects))
                             putExtra(ReviewActivity.EXTRA_OPENINGS, dev.capturekit.capture.EventParser.encodeOpenings(room.openings))
                         }
@@ -357,15 +368,13 @@ class CaptureActivity : Activity(), SessionManager.Listener {
     private fun closeSegmentation() {
         segFeed = null
         segmentation?.close(); segmentation = null
-        maskView.clear(); hud.setMasks(null)
+        objectView.clear(); hud.setBoxes(null)
     }
 
-    /** Main thread: segmentation disabled itself mid-scan. Masks + chip go; boxes return (onDetections feeds them again once segFeed is null). */
+    /** Main thread: segmentation disabled itself mid-scan (model failed): the boxes and their chip go, the scan continues. */
     private fun segmentationFailed() {
-        Log.w(TAG, "segmentation disabled itself: masks off, detector boxes back")
+        Log.w(TAG, "segmentation disabled itself: live object boxes off")
         closeSegmentation()
-        val s = session
-        if (recording && !finishing) hud.setBoxes(if (s != null && s.detectorActive && !research.unguided) boxView.showBoxes else null)
     }
 
     private fun elapsedMs(): Long {
@@ -382,13 +391,43 @@ class CaptureActivity : Activity(), SessionManager.Listener {
         }
     }
 
+    /** Fresh AR origin + a new still window (onResume without a session). Main thread. */
+    private fun beginCalibration() {
+        stopCalibration()
+        calibResult = null
+        ar.close()   // the next ar.resume() creates a new ARCore Session = a new world origin (ADR 0036)
+    }
+
+    /** After ar.resume(): start collecting the still window. */
+    private fun startCalibrationWindow() {
+        val c = StillnessCalibrator(SystemClock.elapsedRealtimeNanos())
+        calib = c
+        val sn = StillnessSensors(this, c)
+        calibNoSensors = !sn.start()
+        calibSensors = sn
+    }
+
+    private fun stopCalibration() { calibSensors?.stop(); calibSensors = null; calib = null }
+
+    /** Hold-still card + Start gate (UI thread, ~4 Hz). Only before a scan exists. */
+    private fun refreshCalibration() {
+        val c = calib
+        if (c != null && calibResult == null && c.state == StillnessCalibrator.State.READY) { calibResult = c.result(); calibSensors?.stop(); calibSensors = null }
+        val ui = CalibrationCard.ui(c == null && calibResult == null, if (calibResult != null) StillnessCalibrator.State.READY else c?.state)
+        val (head, sub) = CalibrationCard.text(ui, c?.progress ?: 0.0, c?.needsTableHint(SystemClock.elapsedRealtimeNanos()) == true, trackState)
+        hud.setCoaching(head)
+        hud.setDetail(sub.ifEmpty { recoveredNote })
+        hud.button.isEnabled = !recovering && CalibrationCard.startAllowed(ui, trackState)
+    }
+
     private fun refresh() {
+        if (session == null && !finishing && !recording) refreshCalibration()
         val p = lastPolicy
         // One pill: tracking + latest frame-quality reasons + thermal level (warming/hot no longer use the banner).
         hud.setStatus(trackState, trackFailure, if (recording && !corePaused && lastQuality >= 0) lastReasons else emptyList(),
             if (recording && p != null) p.level else 0, ar.live() || ar.lastFrameMs == 0L || ar.state != ArState.READY)
         if (hud.debugOn) session?.let { hud.setDebug(it.stats.hudLine()) }
-        hud.setUnderstanding(if (recording && !research.unguided) overlay else null)
+        hud.setCompleteness(if (recording && !research.unguided && overlay != null) Completeness.compute(overlay, objectView.live) else null)
         // Recalibration card (issue #1): only while scanning; the unguided trial arm gets no guidance, but the core still
         // pauses keyframes there. A user pause hides it (the core keeps tracking the recovery and resumes it on Resume).
         val r = recal
@@ -415,6 +454,7 @@ class CaptureActivity : Activity(), SessionManager.Listener {
                 hud.setBanner("Camera permission is needed to scan the room.", UiKit.Kind.ERROR, CameraPermission.retryLabel()) { CameraPermission.retry(this) }
             am != null && ar.state != ArState.READY ->
                 hud.setBanner(am, UiKit.Kind.ERROR, "Retry") { arMessage = null; ar.retry(); refresh() }
+            calibNoSensors && session == null -> hud.setBanner("This phone has no gyroscope or accelerometer, so the scan cannot start.", UiKit.Kind.ERROR)
             !speech.available && recording && !research.unguided -> hud.setBanner("Voice guidance is unavailable: no offline text-to-speech voice. On-screen prompts still work.", UiKit.Kind.INFO)
             thermalMsg != null -> hud.setBanner(thermalMsg, UiKit.Kind.WARN)
             else -> hud.setBanner(null)
@@ -461,17 +501,15 @@ class CaptureActivity : Activity(), SessionManager.Listener {
                     }
                 }
             }
-            is CoreEvent.Overlay -> { overlay = e; segFeed?.overlay = e }
+            is CoreEvent.Overlay -> overlay = e
             is CoreEvent.Governor -> lastGovernor = "${e.from}->${e.to} (${e.reason})"
             else -> {}
         }
     }
     override fun onPolicy(p: Policy) { lastPolicy = p; research.onThermal(p.level, SystemClock.elapsedRealtime()) }
 
-    // Detector thread: one keyframe's boxes (already sent to the core) for the camera-feed overlay (masks replace them, issue #8).
-    override fun onDetections(frameId: Int, tNs: Long, boxes: List<DetectedBox>) {
-        if (recording && !corePaused && !finishing && !research.unguided && segFeed == null) boxView.setDetections(boxes)
-    }
+    // Detector thread: one keyframe's boxes (already sent to the core). Not drawn: the live boxes come from segmentation (ADR 0035).
+    override fun onDetections(frameId: Int, tNs: Long, boxes: List<DetectedBox>) {}
 
     override fun onState(state: Int) {
         val nowPaused = state == STATE_PAUSED
@@ -484,8 +522,11 @@ class CaptureActivity : Activity(), SessionManager.Listener {
     override fun onResume() {
         super.onResume()
         arMessage = null
+        val calibrate = session == null && !finishing && !recording
+        if (calibrate) beginCalibration()
         ar.resume()
         arActive = true
+        if (calibrate) startCalibrationWindow()
         ui.post(tick)
     }
 
@@ -504,6 +545,7 @@ class CaptureActivity : Activity(), SessionManager.Listener {
     override fun onPause() {
         val t0 = SystemClock.elapsedRealtime()
         ui.removeCallbacks(tick)
+        if (session == null) stopCalibration()
         // Leaving the screen mid-scan: pause the core session so no gap is recorded as tracking data.
         if (recording && !corePaused && !finishing) session?.pause()
         voice?.onPause()

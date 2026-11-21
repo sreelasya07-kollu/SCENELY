@@ -15,10 +15,62 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import tempfile
+import threading
+import time
+import urllib.request
 from dataclasses import dataclass, field
-from typing import BinaryIO, Iterator, Protocol
+from pathlib import Path, PurePosixPath
+from typing import BinaryIO, Callable, Iterator, Protocol
 
 MANIFEST = "manifest.json"
+MAX_ISSUES = 50  # cap on issues reported per bundle in the status JSON
+log = logging.getLogger("verifier")
+
+# A validator takes a local bundle folder and returns {"verdict": PASS|WARN|FAIL, "issues": [...]}.
+Validator = Callable[[Path], dict]
+
+
+def semantic_validator(bundle: Path) -> dict:
+    """Server-side semantic check = ``ckit.bundle.validate.validate(bundle, "semantic")``.
+
+    ckit is imported lazily (it needs only jsonschema, mcap, protobuf; see the Dockerfile) so this
+    module stays importable with the standard library alone.
+    """
+    from ckit.bundle.validate import validate
+
+    rep = validate(bundle, "semantic")
+    issues = [
+        {"code": i.code, "severity": i.severity, "message": i.message + (f" [{i.where}]" if i.where else "")}
+        for i in rep.issues
+        if i.severity in ("ERROR", "WARN")
+    ]
+    return {"verdict": rep.verdict, "issues": issues[:MAX_ISSUES]}
+
+
+def safe_rel_path(path: str) -> bool:
+    """True for a plain relative POSIX path with no '..', no backslash and no drive/absolute part."""
+    if not path or "\\" in path or "\x00" in path:
+        return False
+    p = PurePosixPath(path)
+    return bool(p.parts) and not p.is_absolute() and ".." not in p.parts and "." not in p.parts and ":" not in p.parts[0]
+
+
+def post_job(jobs_url: str, bundle_id: str, timeout: float = 5.0) -> bool:
+    """Ask the job service to process a bundle (POST {jobs_url}/jobs). Never raises."""
+    try:
+        req = urllib.request.Request(
+            jobs_url.rstrip("/") + "/jobs",
+            data=json.dumps({"bundle_id": bundle_id}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 (dev URL from env)
+            return 200 <= r.status < 300
+    except Exception as e:  # noqa: BLE001 (the tus upload must never be affected)
+        log.warning("job trigger for %s failed: %s", bundle_id, type(e).__name__)
+        return False
 
 
 @dataclass
@@ -45,19 +97,121 @@ class Status:
     missing: list[str] = field(default_factory=list)
     corrupt: list[dict] = field(default_factory=list)
     verdict: dict | None = None
+    server_validation: dict | None = None  # {verdict, issues}; None until the hook thread finished validating
+    # none: no validator or not COMPLETE; pending: COMPLETE, result not ready; done: server_validation is set
+    server_validation_state: str = "none"
 
     def to_json(self) -> dict:
         return {
             "bundle_id": self.bundle_id, "status": self.status, "reason": self.reason,
             "received": sorted(self.received), "missing": sorted(self.missing),
             "corrupt": self.corrupt, "verdict": self.verdict,
+            "server_validation": self.server_validation,
+            "server_validation_state": self.server_validation_state,
         }  # fmt: skip
 
 
 class Verifier:
-    def __init__(self, store: Store) -> None:
+    LISTING_TTL_S = 10.0  # open_listed re-lists storage at most this often per bundle
+
+    def __init__(self, store: Store, validator: Validator | None = None) -> None:
         self.store = store
+        self.validator = validator
         self._hash_cache: dict[tuple[str, int, float], str] = {}
+        # (bundle_id, manifest sha256) -> completed result. Crashes are NOT cached, so a retry re-validates.
+        self._validation_cache: dict[tuple[str, str], dict] = {}
+        # bundle_id -> (manifest sha256, manifest Upload, files, path -> Upload, checked at)
+        self._listing: dict[str, tuple[str, Upload, list[dict], dict[str, Upload], float]] = {}
+        self._vlock = threading.Lock()  # one validation at a time; never held by check()
+        self._running: set[str] = set()  # bundles with a background validation in flight
+        self._crashed_at: dict[str, float] = {}
+        self._rlock = threading.Lock()
+
+    def validate(self, bundle_id: str) -> None:
+        """Run the server-side validation for the last COMPLETE listing, if not cached yet.
+
+        Slow (downloads the bundle). Call it from the hook thread WITHOUT holding any lock that GET
+        handlers use. check() never calls it: it only reports a finished result.
+        """
+        lst = self._listing.get(bundle_id)
+        if lst is None or self.validator is None:
+            return
+        sha, man, files, done, _ = lst
+        key = (bundle_id, sha)
+        with self._vlock:
+            if key in self._validation_cache:
+                return
+            result = self._run_validation(bundle_id, man, files, done)
+            if any(i["code"] == "VALIDATION_CRASH" for i in result["issues"]):
+                self._crashed_at[bundle_id] = time.monotonic()  # not cached: a retry re-validates
+            else:
+                self._validation_cache[key] = result
+
+    RETRY_AFTER_CRASH_S = 60.0  # GET polling does not restart a crashing validation more often
+
+    def start_validation(self, bundle_id: str) -> bool:
+        """Start validate() in a daemon thread when the result is pending and none is running.
+
+        Non-blocking; covers a verifier restart (the hook already fired). True if a thread started.
+        """
+        lst = self._listing.get(bundle_id)
+        if lst is None or self.validator is None or (bundle_id, lst[0]) in self._validation_cache:
+            return False
+        with self._rlock:
+            crashed = self._crashed_at.get(bundle_id)
+            if bundle_id in self._running:
+                return False
+            if crashed is not None and time.monotonic() - crashed < self.RETRY_AFTER_CRASH_S:
+                return False
+            self._running.add(bundle_id)
+
+        def work() -> None:
+            try:
+                self.validate(bundle_id)
+            except Exception:  # noqa: BLE001
+                log.exception("background validation failed for %s", bundle_id)
+            finally:
+                with self._rlock:
+                    self._running.discard(bundle_id)
+
+        threading.Thread(target=work, daemon=True, name=f"validate-{bundle_id}").start()
+        return True
+
+    def _run_validation(self, bundle_id: str, man: Upload, files: list[dict], done: dict[str, Upload]) -> dict:
+        try:
+            with tempfile.TemporaryDirectory(prefix="verify-") as tmp:
+                root = Path(tmp)
+                for path in [MANIFEST] + [e["path"] for e in files]:
+                    if not safe_rel_path(path):
+                        raise ValueError(f"unsafe path in manifest: {path!r}")
+                    dest = root / path
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    with self.store.open(done[path].key) as src, open(dest, "wb") as out:
+                        for chunk in iter_chunks(src):
+                            out.write(chunk)
+                return self.validator(root)  # type: ignore[misc]
+        except Exception as e:  # noqa: BLE001
+            log.exception("server-side validation crashed for %s", bundle_id)
+            return {"verdict": "FAIL", "issues": [{
+                "code": "VALIDATION_CRASH", "severity": "ERROR",
+                "message": f"server-side validation could not run: {type(e).__name__}"}]}  # fmt: skip
+
+    def open_listed(self, bundle_id: str, path: str) -> tuple[BinaryIO, int] | None:
+        """Open one file of a COMPLETE bundle (manifest.json or a manifest-listed path), else None.
+
+        The listing is refreshed from storage when older than LISTING_TTL_S, and it is keyed by the
+        manifest sha256, so a re-uploaded manifest replaces it.
+        """
+        if not safe_rel_path(path):
+            return None
+        lst = self._listing.get(bundle_id)
+        if lst is None or time.monotonic() - lst[4] > self.LISTING_TTL_S:
+            if self.check(bundle_id).status != "COMPLETE":
+                self._listing.pop(bundle_id, None)
+                return None
+            lst = self._listing[bundle_id]
+        u = lst[3].get(path)
+        return (self.store.open(u.key), u.stored_size) if u else None
 
     def _sha256(self, u: Upload) -> str:
         ck = (u.key, u.stored_size, u.mtime)
@@ -123,6 +277,12 @@ class Verifier:
             st.reason = f"{len(st.missing)} listed file(s) not uploaded yet: " + ", ".join(sorted(st.missing)[:5])
         else:
             st.status, st.reason = "COMPLETE", f"{len(files)} files verified"
+            msha = self._sha256(man)
+            listing = {p: done[p] for p in [MANIFEST] + [e["path"] for e in files]}
+            self._listing[bundle_id] = (msha, man, files, listing, time.monotonic())
+            if self.validator is not None:  # a finished result only; check() never validates
+                st.server_validation = self._validation_cache.get((bundle_id, msha))
+                st.server_validation_state = "done" if st.server_validation else "pending"
         return st
 
 

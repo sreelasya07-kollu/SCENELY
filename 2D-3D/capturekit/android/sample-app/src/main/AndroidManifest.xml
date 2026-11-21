@@ -15,7 +15,9 @@
         <activity android:name=".CaptureActivity" android:screenOrientation="landscape" />
         <activity android:name=".ReviewActivity" android:screenOrientation="landscape" />
         <activity android:name=".ScansActivity" android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".ResultsActivity" android:configChanges="orientation|screenSize|keyboardHidden" />
         <activity android:name=".ClockCheckActivity" android:screenOrientation="landscape" />
+        <activity android:name=".SettingsActivity" android:configChanges="orientation|screenSize|keyboardHidden" />
         <meta-data android:name="com.google.ar.core" android:value="required" />
     </application>
 </manifest>

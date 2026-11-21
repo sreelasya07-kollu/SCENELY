@@ -1,6 +1,6 @@
 """Print this machine's resources and which inventory items it can run.
 
-  .venv/bin/python scripts/heavy/check_machine.py [--json]
+  uv run python scripts/heavy/check_machine.py [--json]
 Verdicts: RUNNABLE | BLOCKED (<reason>) | NOT_IMPLEMENTED | TODO_COMMAND
 Only resources are checked; datasets are checked by scripts/heavy/fetch_datasets.sh.
 """

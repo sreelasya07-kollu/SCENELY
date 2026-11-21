@@ -242,9 +242,16 @@ def load_scanbundle(root: Path) -> SourceDataset:
     return _load(root)
 
 
+def load_capturekit(root: Path) -> SourceDataset:
+    from spatial.io.capturekit import load_capturekit as _load  # lazy: avoids an import cycle
+
+    return _load(root)
+
+
 LOADERS = {
     "replica": load_replica,
     "tum": load_tum,
     "eth3d": load_eth3d,
     "scanbundle": load_scanbundle,
+    "capturekit": load_capturekit,
 }

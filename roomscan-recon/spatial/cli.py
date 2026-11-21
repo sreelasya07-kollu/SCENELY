@@ -38,7 +38,7 @@ def validate_bundle_cmd(
 
 @app.command()
 def ingest(
-    dataset: Annotated[str, typer.Option(help="replica | tum | eth3d | scanbundle")],
+    dataset: Annotated[str, typer.Option(help="replica | tum | eth3d | scanbundle | capturekit")],
     src: Annotated[Path, typer.Option(help="dataset scene directory")],
     out: Annotated[Path | None, typer.Option(help="run directory")] = None,
     max_frames: int | None = None,
@@ -233,7 +233,7 @@ def room(
 
 @app.command()
 def run(
-    dataset: Annotated[str, typer.Option(help="replica | tum | eth3d | scanbundle")],
+    dataset: Annotated[str, typer.Option(help="replica | tum | eth3d | scanbundle | capturekit")],
     src: Annotated[Path, typer.Option(help="dataset scene directory")],
     out: Annotated[Path | None, typer.Option(help="run directory")] = None,
     max_frames: int | None = None,

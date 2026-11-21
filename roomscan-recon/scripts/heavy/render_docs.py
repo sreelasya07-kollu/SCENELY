@@ -1,6 +1,6 @@
 """Render docs/heavy-compute/INVENTORY.md and RESULTS_TEMPLATE.md from inventory.yaml.
 
-.venv/bin/python scripts/heavy/render_docs.py
+uv run python scripts/heavy/render_docs.py   # on Windows set PYTHONUTF8=1 first
 """
 
 from __future__ import annotations

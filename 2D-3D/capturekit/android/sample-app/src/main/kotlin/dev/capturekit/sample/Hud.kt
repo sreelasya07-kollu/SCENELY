@@ -18,20 +18,48 @@ import dev.capturekit.guidance.StatusPill
  * Shared capture HUD over the camera preview:
  *  - Top bar: Dynamic Now Bar status pill (tracking + quality + thermal) left; REC time + trial + voice right
  *  - Viewfinder reticle: Professional spatial corner brackets [ ] with center targeting dot
- *  - Middle row: Room understanding card left-centre (parts checklist + core caption); debug messages beside
+ *  - Middle row: completeness card left-centre (percent + the top weak zone); debug messages beside
  *  - Floating guidance: Now Bar coaching capsule anchored above camera deck with smooth fade transitions
  *  - Camera deck: Authentic camera shutter button (outer ring + solid core / stop square), flanked by circular glass controls
  * Long-press the status pill to toggle the ingest debug line. Clamped by system bar / cutout insets.
  * [features] (ADR 0032): a switched-off feature's view is never added / stays GONE and gets no click listener
- * (room card = guidance, boxes chip = detector, masks chip = segmentation, mic chip = voiceCommands, recalibration
- * card = recalibrateCard). One camera-overlay chip (issue #8): while the masks chip is shown it replaces the boxes chip.
+ * (completeness card = always while scanning, boxes chip = segmentation / live object boxes, mic chip = voiceCommands, recalibration
+ * card = recalibrateCard).
  */
 class Hud(private val ctx: Activity, private val features: FeatureFlags.Flags = FeatureFlags.Flags.DEFAULTS) {
     private val d = ctx.resources.displayMetrics.density
     private fun dp(v: Int) = (v * d).toInt()
 
     private val pill = UiKit.chip(ctx).apply { textSize = UiKit.TEXT_M }
-    private val understanding = UnderstandingView(ctx)
+    /** In-scan action buttons (ADR 0036): the same actions the voice commands have. Visible while recording. */
+    var onAction: (ScanActions.Kind) -> Unit = {}
+    private fun actionChip(label: String, desc: String, kind: ScanActions.Kind) = UiKit.chip(ctx).apply {
+        textSize = UiKit.TEXT_S; gravity = Gravity.CENTER; minimumHeight = dp(48)   // 48 dp touch target
+        UiKit.setChip(this, label, 0xFF546E7A.toInt())
+        contentDescription = desc
+        setOnClickListener { onAction(kind) }
+    }
+    private val actionRow = LinearLayout(ctx).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER
+        visibility = View.GONE
+        for ((label, desc, kind) in listOf(
+            Triple("Repeat", "Repeat the last instruction", ScanActions.Kind.REPEAT),
+            Triple("What's missing", "Ask what is still missing", ScanActions.Kind.MISSING),
+            Triple("Volume -", "Quieter voice", ScanActions.Kind.QUIETER),
+            Triple("Volume +", "Louder voice", ScanActions.Kind.LOUDER))) {
+            addView(actionChip(label, desc, kind), LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(4); rightMargin = dp(4) })
+        }
+    }
+
+    /** Completeness % chip + the first weak zone (ADR 0035). Hidden until the first overlay arrives. */
+    private val completePct = UiKit.chip(ctx).apply { visibility = View.GONE; textSize = UiKit.TEXT_M }
+    private val completeHint = glassText(UiKit.TEXT_S).apply { visibility = View.GONE; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END }
+    private val completeCard = LinearLayout(ctx).apply {
+        orientation = LinearLayout.VERTICAL
+        addView(completePct, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        addView(completeHint, LinearLayout.LayoutParams(dp(150), ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) })
+    }
     private val detail = glassText(UiKit.TEXT_M).apply { visibility = View.GONE }
     /** Voice-command feedback ("Paused.", answers, notes): its own line so it never overwrites [detail]. */
     private val voiceLine = glassText(UiKit.TEXT_M).apply { visibility = View.GONE; maxLines = 3; ellipsize = android.text.TextUtils.TruncateAt.END }
@@ -52,17 +80,11 @@ class Hud(private val ctx: Activity, private val features: FeatureFlags.Flags = 
         addView(recText)
     }
     private val voice = UiKit.chip(ctx).apply { visibility = View.GONE; textSize = UiKit.TEXT_S }
-    /** Camera-feed detector boxes on/off (issue #2 C). Hidden unless the detector runs in this scan. */
+    /** Live green object boxes on/off (ADR 0035). Hidden unless live segmentation runs in this scan. */
     private val boxes = UiKit.chip(ctx).apply {
         visibility = View.GONE; textSize = UiKit.TEXT_S; gravity = Gravity.CENTER
         minimumHeight = dp(48)   // 48 dp touch target
     }
-    /** Camera-feed segmentation masks on/off (issue #8), in the boxes chip's place. Hidden unless segmentation runs in this scan. */
-    private val masks = UiKit.chip(ctx).apply {
-        visibility = View.GONE; textSize = UiKit.TEXT_S; gravity = Gravity.CENTER
-        minimumHeight = dp(48)   // 48 dp touch target
-    }
-    private var boxesWanted: Boolean? = null   // last setBoxes value, re-applied when the masks chip goes away
     /** Push-to-talk chip (top-right zone, left of the voice toggle). Hidden unless voice commands are available. */
     private val mic = UiKit.chip(ctx).apply {
         visibility = View.GONE; textSize = UiKit.TEXT_S; gravity = Gravity.CENTER
@@ -127,8 +149,7 @@ class Hud(private val ctx: Activity, private val features: FeatureFlags.Flags = 
         val mid = (longSide * 0.55).toInt()
         coaching.maxWidth = (longSide * 0.7).toInt(); detail.maxWidth = mid; voiceLine.maxWidth = mid; result.maxWidth = mid; debug.maxWidth = mid
         voice.setOnClickListener { onVoiceToggle() }
-        if (features.detector) boxes.setOnClickListener { onBoxesToggle() }
-        if (features.segmentation) masks.setOnClickListener { onMasksToggle() }
+        if (features.segmentation) boxes.setOnClickListener { onBoxesToggle() }
         if (features.voiceCommands) mic.setOnClickListener { onMicClick() }
         trial.setOnClickListener { onTrialClick() }
         pill.setOnLongClickListener { debugOn = !debugOn; if (!debugOn) debug.visibility = View.GONE; true }
@@ -160,7 +181,6 @@ class Hud(private val ctx: Activity, private val features: FeatureFlags.Flags = 
             addView(trial, LinearLayout.LayoutParams(wrap, wrap).apply { rightMargin = dp(8) })
             addView(mic, LinearLayout.LayoutParams(wrap, wrap).apply { rightMargin = dp(8) })
             addView(boxes, LinearLayout.LayoutParams(wrap, wrap).apply { rightMargin = dp(8) })
-            addView(masks, LinearLayout.LayoutParams(wrap, wrap).apply { rightMargin = dp(8) })
             addView(voice)
         }
         val topBar = LinearLayout(ctx).apply {
@@ -178,7 +198,7 @@ class Hud(private val ctx: Activity, private val features: FeatureFlags.Flags = 
         }
         val middle = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
-            if (features.guidance) addView(understanding.card, LinearLayout.LayoutParams(wrap, wrap).apply { gravity = Gravity.CENTER_VERTICAL })
+            addView(completeCard, LinearLayout.LayoutParams(wrap, wrap).apply { gravity = Gravity.CENTER_VERTICAL })
             addView(msgs, LinearLayout.LayoutParams(0, wrap, 1f).apply { leftMargin = dp(8) })
         }
 
@@ -199,6 +219,7 @@ class Hud(private val ctx: Activity, private val features: FeatureFlags.Flags = 
             addView(topBar, LinearLayout.LayoutParams(match, wrap))
             addView(bannerRow, LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(6) })
             addView(middle, LinearLayout.LayoutParams(match, 0, 1f).apply { topMargin = dp(6); bottomMargin = dp(6) })
+            addView(actionRow, LinearLayout.LayoutParams(wrap, wrap).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(8) })
             addView(coaching, LinearLayout.LayoutParams(wrap, wrap).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(14) })
             addView(shutterDeck, LinearLayout.LayoutParams(match, wrap).apply { bottomMargin = dp(4) })
         }
@@ -225,8 +246,16 @@ class Hud(private val ctx: Activity, private val features: FeatureFlags.Flags = 
     /** Tracking-only pill (screens without core quality/thermal, e.g. the raw recorder). */
     fun setTracking(state: String, failure: String, live: Boolean = true) = setStatus(state, failure, emptyList(), 0, live)
 
-    /** Latest core overlay snapshot (null hides it). Rendered at most 4 Hz; UI thread only. */
-    fun setUnderstanding(o: dev.capturekit.capture.CoreEvent.Overlay?) { if (features.guidance) understanding.update(o) }
+    /** Completeness card (null hides it): "Room NN%" and the highest-priority weak zone. UI thread only, ~4 Hz. */
+    fun setCompleteness(s: dev.capturekit.guidance.Completeness.Summary?) {
+        if (s == null) { completePct.visibility = View.GONE; completeHint.visibility = View.GONE; return }
+        completePct.visibility = View.VISIBLE
+        UiKit.setChip(completePct, "Complete ${s.completenessPct}%", if (s.completenessPct >= 80) UiKit.GREEN else 0xFF546E7A.toInt())
+        completePct.contentDescription = "Scan is ${s.completenessPct} percent complete"
+        val z = s.weakZones.firstOrNull()
+        completeHint.visibility = if (z == null) View.GONE else View.VISIBLE
+        if (z != null && completeHint.text.toString() != z.text) completeHint.text = z.text
+    }
 
     /** Voice-command feedback line; null hides it. Independent of [setDetail]. */
     fun setVoiceLine(text: String?) {
@@ -241,7 +270,6 @@ class Hud(private val ctx: Activity, private val features: FeatureFlags.Flags = 
 
     /** Fades to the new coaching sentence; [sub] (core long_text) goes to the room card caption. No-op when unchanged. */
     fun setCoaching(text: String, sub: String = "") {
-        if (features.guidance) understanding.setLongText(sub)
         if (text == coachText) return
         coachText = text
         coaching.animate().cancel()
@@ -250,6 +278,9 @@ class Hud(private val ctx: Activity, private val features: FeatureFlags.Flags = 
             coaching.animate().alpha(1f).setDuration(150).start()
         }.start()
     }
+
+    /** Shows or hides the in-scan action row (not in the unguided trial arm). */
+    fun setActions(on: Boolean) { actionRow.visibility = if (on) View.VISIBLE else View.GONE }
 
     fun setRecording(on: Boolean) {
         reticle.visibility = if (on) View.VISIBLE else View.GONE
@@ -291,34 +322,12 @@ class Hud(private val ctx: Activity, private val features: FeatureFlags.Flags = 
     /** Set to handle taps on the "Boxes" chip. */
     var onBoxesToggle: () -> Unit = {}
 
-    /** Camera-feed boxes chip; null hides it (detector not running, not recording, or the unguided trial arm). */
+    /** Object boxes chip; null hides it (segmentation not running, not recording, or the unguided trial arm). */
     fun setBoxes(on: Boolean?) {
-        boxesWanted = on
-        if (on == null || !features.detector || masks.visibility == View.VISIBLE) { boxes.visibility = View.GONE; return }
+        if (on == null || !features.segmentation) { boxes.visibility = View.GONE; return }
         boxes.visibility = View.VISIBLE
         UiKit.setChip(boxes, if (on) "Boxes on" else "Boxes off", if (on) UiKit.GREEN else 0xFF546E7A.toInt())
         boxes.contentDescription = if (on) "Object boxes on the camera view are shown. Tap to hide them." else "Object boxes on the camera view are hidden. Tap to show them."
-    }
-
-    /** Set to handle taps on the "Masks" chip. */
-    var onMasksToggle: () -> Unit = {}
-
-    /**
-     * Camera-feed segmentation masks chip (issue #8); null hides it (segmentation not running, not recording, or the
-     * unguided trial arm). While shown it replaces the boxes chip (one camera-overlay control); hiding it brings the
-     * boxes chip back as last set.
-     */
-    fun setMasks(on: Boolean?) {
-        if (on == null || !features.segmentation) {
-            val wasShown = masks.visibility == View.VISIBLE
-            masks.visibility = View.GONE
-            if (wasShown) setBoxes(boxesWanted)
-            return
-        }
-        masks.visibility = View.VISIBLE
-        boxes.visibility = View.GONE
-        UiKit.setChip(masks, if (on) "Masks on" else "Masks off", if (on) UiKit.GREEN else 0xFF546E7A.toInt())
-        masks.contentDescription = if (on) "Object and surface masks on the camera view are shown. Tap to hide them." else "Object and surface masks on the camera view are hidden. Tap to show them."
     }
 
     /** Set to handle taps on the trial chip (field flavour: opens the trial setup). */

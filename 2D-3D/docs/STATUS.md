@@ -4,6 +4,8 @@ The program now has two parts (see [program-spec/README.md](program-spec/README.
 
 See also [NEXT_SESSION.md](NEXT_SESSION.md) for the copy-paste start kit for a new conversation.
 
+2026-11-22: the 14-stage feature table for the whole program (phone and backend) is [roomscan-recon/docs/FEATURE_STATUS.md](../../roomscan-recon/docs/FEATURE_STATUS.md); how to run the GPU items on another machine is [roomscan-recon/docs/heavy-compute/GPU_RUNBOOK.md](../../roomscan-recon/docs/heavy-compute/GPU_RUNBOOK.md).
+
 Updated 2026-11-20 · branch `main` (everything committed; GitHub RealKarthiksai/2D-3D issues #1-#10 are closed; see PROGRESS.md; history was rewritten once, older hashes in old reports no longer exist) · tests only you can run: [HUMAN_TESTS.md](HUMAN_TESTS.md)
 
 ### GitHub issues vs the code (audited 2026-11-20 on `cded9a6`)

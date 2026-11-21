@@ -36,3 +36,6 @@ Architecture Decision Records (ADRs), one file per decision: NNNN-title.md.
 - [0032](0032-feature-flags-device-verified-only.md) Default build shows only device-verified features; FeatureFlags (guidance, detector, voice commands, recalibration card) off by default (issue #6; supersedes 0030 "detector default on")
 - [0033](0033-keyframe-dedup-all-keyframes.md) Keyframe selection (issue #9): novelty against all saved keyframes, DUPLICATE reason, thresholds unchanged
 - [0034](0034-lean-bundle-no-imu-archive.md) Lean bundle: IMU not recorded by default (schema 1.4.0), one compressed archive, keep/drop inventory (issue #10)
+- [0035](0035-live-segmentation-and-object-memory.md) Live RF-DETR-Seg instance segmentation with per-scan object memory (Android green boxes)
+- [0036](0036-still-calibration-and-imu-default.md) Pre-scan stillness calibration (contract C1), IMU recorded by default on Android
+- [0037](0037-ios-parity-swift-ports.md) iOS parity with Android: Swift ports of the Kotlin app helpers (not moved into core), LiteRT-Swift in its own target

@@ -6,13 +6,11 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import kotlin.math.cos
 import kotlin.math.sin
 
 class MaskMathTest {
-    /** Camera at the origin looking down world -Z (identity rotation), 640 x 480. */
+    /** Camera 1.5 m up at the origin looking down world -Z (identity rotation), 640 x 480. */
     private val cam = CameraSnapshot(1.0, 0.0, 0.0, 0.0, 0.0, 1.5, 0.0, 500.0, 500.0, 320.0, 240.0, 640, 480)
 
     private fun yawed(deg: Double): CameraSnapshot {
@@ -29,50 +27,30 @@ class MaskMathTest {
         assertNull(cam.project(Vec3(0f, 1.5f, 2f)))    // behind
     }
 
-    @Test fun warpIsIdentityWithoutMotion() {
-        val h = MaskWarp.homography(cam, cam)
-        val out = FloatArray(2)
-        assertTrue(MaskWarp.apply(h, 100f, 50f, out))
-        assertEquals(100f, out[0], 1e-3f); assertEquals(50f, out[1], 1e-3f)
+    @Test fun depthIsDistanceAlongTheOpticalAxis() {
+        assertEquals(2.0, cam.depthOf(Vec3(0.7f, 1.0f, -2f)), 1e-6)
+        assertTrue(cam.depthOf(Vec3(0f, 1.5f, 2f)) < 0)
+        assertEquals(2.0, yawed(90.0).depthOf(Vec3(-2f, 1.5f, 0f)), 1e-5)   // yawed 90 deg left: looks down world -X
     }
 
-    @Test fun warpMatchesReprojectionUnderPureRotation() {
-        val to = yawed(10.0)
-        val h = MaskWarp.homography(cam, to)
-        val out = FloatArray(2)
-        for (p in listOf(Vec3(0.3f, 1.2f, -3f), Vec3(-0.5f, 2f, -1.5f), Vec3(0.1f, 1.5f, -6f))) {
-            val a = cam.project(p)!!; val b = to.project(p)!!
-            assertTrue(MaskWarp.apply(h, a[0], a[1], out))
-            assertEquals(b[0], out[0], 0.05f); assertEquals(b[1], out[1], 0.05f)
+    @Test fun rayThroughAPixelHitsWhatProjectsThere() {
+        for (c in listOf(cam, yawed(37.0))) for ((u, v) in listOf(320f to 240f, 100f to 400f, 600f to 30f)) {
+            val (o, d) = c.ray(u, v)
+            assertEquals(1.0, Math.sqrt((d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).toDouble()), 1e-5)
+            val p = Vec3(o[0] + 3f * d[0], o[1] + 3f * d[1], o[2] + 3f * d[2])
+            val uv = c.project(p)!!
+            assertEquals(u, uv[0], 0.05f); assertEquals(v, uv[1], 0.05f)
         }
+        val (o, d) = cam.ray(320f, 240f)
+        assertEquals(1.5f, o[1], 1e-6f)
+        assertEquals(-1f, d[2], 1e-6f)                   // the principal ray looks down -Z
     }
 
-    @Test fun promptEncoderLayout() {
-        val bytes = ByteBuffer.allocate(3072).order(ByteOrder.LITTLE_ENDIAN)
-        repeat(256) { bytes.putFloat(0f) }            // posmat = 0 -> sin 0, cos 1
-        repeat(256) { bytes.putFloat(0.5f) }          // point_embed[1]
-        repeat(256) { bytes.putFloat(-2f) }           // not_a_point
-        val e = SamPromptEncoder.fromLittleEndian(bytes.array())!!
-        val t = e.encode(512f, 512f)
-        assertEquals(512, t.size)
-        assertEquals(0.5f, t[0], 1e-6f); assertEquals(1.5f, t[128], 1e-6f); assertEquals(-2f, t[256], 1e-6f)
-        assertNull(SamPromptEncoder.fromLittleEndian(ByteArray(100)))
-    }
-
-    @Test fun promptsKeepObjectsFirstAndOnlyVisibleOnes() {
-        val planes = listOf(
-            PlaneInfo(1, SurfaceKind.FLOOR, Vec3(0f, 0f, -6f)),
-            PlaneInfo(2, SurfaceKind.CEILING, Vec3(0f, 2.6f, 4f)),   // behind: no prompt
-            PlaneInfo(3, SurfaceKind.WALL, Vec3(0f, 1.5f, -4f)),
-        )
+    @Test fun objectBoxProjectsTheLiftedFootprint() {
         val chair = ObjectBox(9, "chair", 0.2, -2.5, 0.5, 0.5, 0, 0.9)
-        val p = PromptBuilder.build(cam, planes, listOf(chair), emptyList())
-        assertEquals(listOf("chair", "Floor", "Wall"), p.map { it.label })
-        assertEquals(TrackKey.CoreObject(9), p[0].key)
-        assertNotNull(p[0].box)
-        assertEquals(TrackKey.Plane(3), p[2].key)
-        assertEquals(2, PromptBuilder.build(cam, planes, listOf(chair), emptyList(), max = 2).size)
-        // Without a floor plane there is no height for objects / layout walls.
-        assertEquals(listOf("Wall"), PromptBuilder.build(cam, planes.filter { it.kind != SurfaceKind.FLOOR }, listOf(chair), emptyList()).map { it.label })
+        val b = MaskMath.objectBox(cam, chair, 0f)
+        assertNotNull(b)
+        assertTrue(b!!.x0 < 320f && b.x1 > 320f - 100f)
+        assertNull(MaskMath.objectBox(cam, chair.copy(z = 4.0), 0f))   // behind the camera: no box
     }
 }
